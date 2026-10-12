@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Monthly, so stale tables fail even when nothing is pushed.
+  schedule:
+    - cron: '0 14 1 * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,3 +42,15 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
+
+  # AS_OF is the date of the last full review of the tables against their
+  # sources. Fail once it is more than six months old (see CONTRIBUTING.md).
+  freshness:
+    runs-on: ubuntu-latest
+    name: tables reviewed in the last six months
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm run check-freshness

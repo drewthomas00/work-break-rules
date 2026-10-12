@@ -186,13 +186,15 @@ Break law changes — Minnesota rewrote its rules for 2026, Colorado reissues it
 
 Every number needs a linkable source. A correction should cite the provision, link the official text if it can be reached, and say what changed and from when. A change in the law is a new version with its `effectiveFrom` (a jurisdiction may be a list of versions, oldest first), not an edit that rewrites the past.
 
+The tables are re-checked against their sources every December and June, and after any reported change; `AS_OF` is the date of the last full review, and CI fails once it is more than six months old. See [CONTRIBUTING.md](CONTRIBUTING.md) for what a report or a pull request needs.
+
 ## Testing
 
 ```sh
 npm test
 ```
 
-Node's built-in test runner, no framework. CI runs the suite on Node 18–24 and again under a non-UTC `TZ`.
+Node's built-in test runner, no framework. CI runs the suite on Node 18–26 and again under a non-UTC `TZ`.
 
 ## Authorship
 

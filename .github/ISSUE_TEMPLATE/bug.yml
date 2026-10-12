@@ -1,0 +1,25 @@
+name: Bug in the code
+description: The checker crashes, throws on valid input, or gets an answer wrong for a reason other than the data.
+labels: [bug]
+body:
+  - type: textarea
+    id: input
+    attributes:
+      label: The call
+      description: The smallest input that shows the problem.
+      render: js
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Package and Node versions
+      placeholder: 1.0.0 on Node 24
+    validations:
+      required: true

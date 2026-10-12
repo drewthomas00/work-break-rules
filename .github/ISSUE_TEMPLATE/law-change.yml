@@ -1,0 +1,61 @@
+name: Law change or wrong value
+description: A rule changed, or a value in the tables is wrong.
+title: "Law change: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. Every value in this package rests on a source that can be read, so the provision and a link to its official text are required. See CONTRIBUTING.md.
+  - type: input
+    id: jurisdiction
+    attributes:
+      label: Jurisdiction
+      description: "A state as `US-XX` (e.g. `US-CA`), or `US` for federal law."
+      placeholder: US-CA
+    validations:
+      required: true
+  - type: dropdown
+    id: rule
+    attributes:
+      label: Which rule
+      options:
+        - "Meal break"
+        - "Rest break"
+        - "Waiver or exemption"
+        - "Who is covered (industry, employer size)"
+        - "Premium or penalty pay"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What the package says, and what the law says
+      description: The value the package gives now and the value the law sets. Include the call you made if you have one.
+      placeholder: "checkWorkday({ jurisdiction: 'US-CA', date: '2026-10-12', start: '09:00', end: '17:00', breaks: [...] })"
+    validations:
+      required: true
+  - type: input
+    id: citation
+    attributes:
+      label: Provision
+      description: The statute, regulation or code section that sets the rule.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Link to the official text
+      description: A legislature, gazette or enforcing agency. If it is not online yet, say so and link what you have.
+    validations:
+      required: true
+  - type: input
+    id: effective
+    attributes:
+      label: Date it takes effect
+      description: YYYY-MM-DD, if known.
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Exceptions, pending bills, or an agency's guidance on how it reads the text.

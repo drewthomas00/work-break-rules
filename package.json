@@ -25,7 +25,8 @@
   ],
   "scripts": {
     "test": "node --test",
-    "prepublishOnly": "npm test"
+    "check-freshness": "node scripts/check-freshness.js",
+    "prepublishOnly": "npm test && npm run check-freshness"
   },
   "keywords": [
     "meal-break",
