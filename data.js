@@ -7,9 +7,10 @@
  * was checked and sets no such rule. Where a rule is conditional or vague, the
  * stricter reading is encoded and the `note` says so.
  *
- * Shapes (see index.d.ts):
- *   meal  { id, trigger, minutes, window, waiver, onDutyAllowed, appliesWhen, citations, confidence, note }
- *   rest  { minutes, perHours, majorFraction, minimumShiftHours, table, maxStretch, paid, waiver, appliesWhen, citations, confidence, note }
+ * The shapes are described in index.d.ts and checked at load by validate.js.
+ * Hours are hours worked; `op` is the comparison that must hold (a trigger's
+ * minWorked { hours: 5, op: '>' } is "more than 5 hours"; a maxStretch
+ * { hours: 5, op: '<=' } is "no more than 5 hours without one").
  */
 
 const AS_OF = '2026-10-11';
@@ -43,7 +44,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 5, op: '>' },
+        trigger: { minWorked: { hours: 5, op: '>' } },
         minutes: 30,
         window: { startByWorkedHours: 5 },
         waiver: { maxWorkedHours: 6 },
@@ -59,7 +60,7 @@ const JURISDICTIONS = {
       },
       {
         id: 'second_meal',
-        trigger: { workedHours: 10, op: '>' },
+        trigger: { minWorked: { hours: 10, op: '>' } },
         minutes: 30,
         window: { startByWorkedHours: 10 },
         waiver: { maxWorkedHours: 12, requiresNotWaived: 'meal' },
@@ -100,7 +101,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 5, op: '>' },
+        trigger: { minWorked: { hours: 5, op: '>' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 1, notInLastWorkedHours: 1 },
         waiver: null,
@@ -132,7 +133,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 7.5, op: '>=' },
+        trigger: { minWorked: { hours: 7.5, op: '>=' } },
         minutes: 20,
         window: { startByWorkedHours: 5 },
         waiver: null,
@@ -142,9 +143,9 @@ const JURISDICTIONS = {
         confidence: 'high',
         note: 'A shift of 7½ continuous hours needs a meal of at least 20 minutes beginning no later than 5 hours after the start, and another 20 minutes for every further 4½ continuous hours. Reasonable restroom time does not count toward it. Silent on pay: a 20-minute meal is unpaid under federal law only if it meets 29 CFR 785.19. The ILGA site\'s file mirror is linked because ilga.gov blocks automated reading. Effective date is that of P.A. 102-828, which added the further meals.',
       },
-      { id: 'second_meal', trigger: { workedHours: 12, op: '>=' }, minutes: 20, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
+      { id: 'second_meal', trigger: { minWorked: { hours: 12, op: '>=' } }, minutes: 20, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
         citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }], confidence: 'high', note: 'The additional 20 minutes after a further 4½ continuous hours (12 in all).' },
-      { id: 'third_meal', trigger: { workedHours: 16.5, op: '>=' }, minutes: 20, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
+      { id: 'third_meal', trigger: { minWorked: { hours: 16.5, op: '>=' } }, minutes: 20, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
         citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }], confidence: 'high', note: 'The additional 20 minutes after another 4½ continuous hours (16½ in all).' },
     ],
     rest: null,
@@ -162,7 +163,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 3, op: '>' },
+        trigger: { minWorked: { hours: 3, op: '>' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 3, startByWorkedHours: 5 },
         waiver: {},
@@ -196,22 +197,22 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>' },
+        trigger: { minWorked: { hours: 6, op: '>' } },
         minutes: 30,
         window: null,
         waiver: null,
         onDutyAllowed: true,
-        appliesWhen: { industries: ['retail'], minEmployerEmployees: 50 },
+        appliesWhen: { industries: ['retail'], minRetailEmployees: 50, minLocationEmployees: 6 },
         citations: [{ citation: 'Md. Code, Lab. & Empl. § 3-710(c)(1)(ii)', sourceUrl: MD_ARTICLE }],
         confidence: 'high',
-        note: 'Healthy Retail Employee Act: retail establishments only (selling goods to a consumer present at the sale; not restaurants or wholesalers), for an employer with 50 or more retail employees in Maryland. More than 6 consecutive hours needs a 30-minute nonworking break. A working break is allowed only by written agreement where the work prevents relief or the employee may eat while working, and is then time worked. Exempt: FLSA-exempt employees, office locations, and a single location with 5 or fewer employees. A salon is retail only if retail goods are most of its sales (Department FAQ).',
+        note: 'Healthy Retail Employee Act: retail establishments only (selling goods to a consumer present at the sale; not restaurants or wholesalers), for an employer with 50 or more retail employees in Maryland (fact retailEmployees). More than 6 consecutive hours needs a 30-minute nonworking break. A working break is allowed only by written agreement where the work prevents relief or the employee may eat while working, and is then time worked. Exempt: FLSA-exempt employees, office locations, and a single location with 5 or fewer employees (fact locationEmployees). A salon is retail only if retail goods are most of its sales (Department FAQ).',
       },
     ],
     rest: {
       minutes: 15, perHours: null, majorFraction: false, minimumShiftHours: null,
       table: [[4, '>=', 1], [6, '>', 0], [8, '>=', 1], [12, '>=', 2], [16, '>=', 3], [20, '>=', 4]],
       maxStretch: null, paid: true, waiver: { maxWorkedHours: 6 },
-      appliesWhen: { industries: ['retail'], minEmployerEmployees: 50 },
+      appliesWhen: { industries: ['retail'], minRetailEmployees: 50, minLocationEmployees: 6 },
       citations: [{ citation: 'Md. Code, Lab. & Empl. § 3-710(c)', sourceUrl: MD_ARTICLE }],
       confidence: 'high',
       note: '4 to 6 consecutive hours: one 15-minute break, which may be waived in writing. More than 6: the 30-minute break instead. From 8 consecutive hours, an additional 15 minutes for every additional 4 consecutive hours (one from 8, encoded as stricter; the Department counts from the previous break). The statute is silent on pay; a break of 15 minutes is paid under 29 CFR 785.18.',
@@ -230,7 +231,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>=' },
+        trigger: { minWorked: { hours: 6, op: '>=' } },
         minutes: 30,
         window: null,
         waiver: null,
@@ -242,7 +243,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: {
-      minutes: 15, perHours: 4, majorFraction: false, minimumShiftHours: 4, table: null, maxStretch: { hours: 4, op: '>=' }, paid: true, waiver: null, appliesWhen: null,
+      minutes: 15, perHours: 4, majorFraction: false, minimumShiftHours: 4, table: null, maxStretch: { hours: 4, op: '<' }, paid: true, waiver: null, appliesWhen: null,
       citations: [
         { citation: 'Minn. Stat. § 177.253, subd. 1', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.253' },
         { citation: 'Minn. R. 5200.0120, subp. 1', sourceUrl: 'https://www.revisor.mn.gov/rules/5200.0120/' },
@@ -267,23 +268,23 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 8, op: '>=' },
+        trigger: { minWorked: { hours: 8, op: '>=' } },
         minutes: 30,
-        window: { maxStretch: { hours: 8, op: '>=' } },
+        window: { maxStretch: { hours: 8, op: '<' } },
         waiver: {},
         onDutyAllowed: false,
-        appliesWhen: { minEmployeesOnDuty: 2 },
+        appliesWhen: { minLocationEmployees: 2 },
         citations: [
           { citation: 'NRS 608.019(1), (3)–(5)', sourceUrl: NV_NRS },
           { citation: 'NAC 608.145(3)', sourceUrl: NV_NAC },
         ],
         confidence: 'high',
-        note: 'No continuous 8 hours of work without a 30-minute meal; a shorter break does not interrupt the 8 hours. Not where only one person is employed at the place of employment (encoded as fewer than 2 on duty), under a collective bargaining agreement, or under a Labor Commissioner exemption. The employee may voluntarily forgo a meal; the employer must prove that agreement.',
+        note: 'No continuous 8 hours of work without a 30-minute meal; a shorter break does not interrupt the 8 hours. Not where only one person is employed at the place of employment (fact locationEmployees), under a collective bargaining agreement, or under a Labor Commissioner exemption. The employee may voluntarily forgo a meal; the employer must prove that agreement.',
       },
     ],
     rest: {
       minutes: 10, perHours: 4, majorFraction: true, minimumShiftHours: 3.5, table: null, maxStretch: null, paid: true, waiver: {},
-      appliesWhen: { minEmployeesOnDuty: 2 },
+      appliesWhen: { minLocationEmployees: 2 },
       citations: [
         { citation: 'NRS 608.019(2)', sourceUrl: NV_NRS },
         { citation: 'NAC 608.145(1)–(2)', sourceUrl: NV_NAC },
@@ -305,7 +306,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>=', atMostWorkedHours: 7 },
+        trigger: { minWorked: { hours: 6, op: '>=' }, maxWorked: { hours: 7, op: '<=' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 2, endByWorkedHours: 4 },
         waiver: null,
@@ -317,7 +318,7 @@ const JURISDICTIONS = {
       },
       {
         id: 'meal',
-        trigger: { workedHours: 7, op: '>' },
+        trigger: { minWorked: { hours: 7, op: '>' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 3, endByWorkedHours: 5 },
         waiver: null,
@@ -327,7 +328,7 @@ const JURISDICTIONS = {
         confidence: 'high',
         note: 'A work period of more than 7 hours: after the end of the 3rd hour worked, completed before the 6th hour begins.',
       },
-      { id: 'second_meal', trigger: { workedHours: 14, op: '>=' }, minutes: 30, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
+      { id: 'second_meal', trigger: { minWorked: { hours: 14, op: '>=' } }, minutes: 30, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
         citations: [{ citation: 'OAR 839-020-0050, Appendix A', sourceUrl: OR_RULE }], confidence: 'high', note: 'Appendix A: two meals from 14 hours, three from 22.' },
     ],
     rest: {
@@ -366,7 +367,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 5, op: '>' },
+        trigger: { minWorked: { hours: 5, op: '>' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 2, startByWorkedHours: 5 },
         waiver: {},
@@ -381,9 +382,9 @@ const JURISDICTIONS = {
       },
       {
         id: 'meal_every_5h',
-        trigger: { workedHours: 5, op: '>' },
+        trigger: { minWorked: { hours: 5, op: '>' } },
         minutes: 30,
-        window: { maxStretch: { hours: 5, op: '>' } },
+        window: { maxStretch: { hours: 5, op: '<=' } },
         waiver: {},
         onDutyAllowed: true,
         appliesWhen: null,
@@ -396,7 +397,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: {
-      minutes: 10, perHours: 4, majorFraction: false, minimumShiftHours: null, table: null, maxStretch: { hours: 3, op: '>' }, paid: true, waiver: null, appliesWhen: null,
+      minutes: 10, perHours: 4, majorFraction: false, minimumShiftHours: null, table: null, maxStretch: { hours: 3, op: '<=' }, paid: true, waiver: null, appliesWhen: null,
       citations: [
         { citation: 'WAC 296-126-092(4)–(5)', sourceUrl: WA_RULE },
         { citation: 'L&I Administrative Policy ES.C.6.1', sourceUrl: WA_POLICY },
@@ -421,7 +422,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>=' },
+        trigger: { minWorked: { hours: 6, op: '>=' } },
         minutes: 20,
         window: null,
         waiver: null,
@@ -442,7 +443,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 7.5, op: '>=' },
+        trigger: { minWorked: { hours: 7.5, op: '>=' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 2, notInLastWorkedHours: 2 },
         waiver: {},
@@ -464,7 +465,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 7.5, op: '>=' },
+        trigger: { minWorked: { hours: 7.5, op: '>=' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 2, notInLastWorkedHours: 2 },
         waiver: {},
@@ -486,7 +487,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>' },
+        trigger: { minWorked: { hours: 6, op: '>' } },
         minutes: 30,
         window: null,
         waiver: null,
@@ -511,9 +512,9 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>' },
+        trigger: { minWorked: { hours: 6, op: '>' } },
         minutes: 30,
-        window: { maxStretch: { hours: 6, op: '>' } },
+        window: { maxStretch: { hours: 6, op: '<=' } },
         waiver: {},
         onDutyAllowed: false,
         appliesWhen: null,
@@ -533,7 +534,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 5, op: '>' },
+        trigger: { minWorked: { hours: 5, op: '>' } },
         minutes: 30,
         window: null,
         waiver: {},
@@ -555,7 +556,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 8, op: '>=' },
+        trigger: { minWorked: { hours: 8, op: '>=' } },
         minutes: 30,
         window: null,
         waiver: {},
@@ -580,9 +581,9 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 5, op: '>' },
+        trigger: { minWorked: { hours: 5, op: '>' } },
         minutes: 30,
-        window: { maxStretch: { hours: 5, op: '>' } },
+        window: { maxStretch: { hours: 5, op: '<=' } },
         waiver: null,
         onDutyAllowed: true,
         appliesWhen: null,
@@ -602,7 +603,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'noonday_meal',
-        trigger: { spanHours: 6, op: '>', overlapsClock: ['11:00', '14:00'], startsBefore: '13:00' },
+        trigger: { minSpan: { hours: 6, op: '>' }, overlapsClock: ['11:00', '14:00'], startsBefore: '13:00' },
         minutes: 30,
         window: { clock: ['11:00', '14:00'] },
         waiver: null,
@@ -617,7 +618,7 @@ const JURISDICTIONS = {
       },
       {
         id: 'night_meal',
-        trigger: { spanHours: 6, op: '>', startsBetweenClock: ['13:00', '06:00'] },
+        trigger: { minSpan: { hours: 6, op: '>' }, startsBetweenClock: ['13:00', '06:00'] },
         minutes: 45,
         window: null,
         waiver: null,
@@ -654,7 +655,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>=', belowWorkedHours: 8 },
+        trigger: { minWorked: { hours: 6, op: '>=' }, maxWorked: { hours: 8, op: '<' } },
         minutes: 20,
         window: null,
         waiver: null,
@@ -666,7 +667,7 @@ const JURISDICTIONS = {
       },
       {
         id: 'meal',
-        trigger: { workedHours: 8, op: '>=' },
+        trigger: { minWorked: { hours: 8, op: '>=' } },
         minutes: 30,
         window: null,
         waiver: null,
@@ -688,7 +689,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'meal',
-        trigger: { workedHours: 6, op: '>=' },
+        trigger: { minWorked: { hours: 6, op: '>=' } },
         minutes: 30,
         window: { notBeforeWorkedHours: 1 },
         waiver: null,

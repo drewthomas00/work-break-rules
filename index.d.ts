@@ -28,26 +28,26 @@ export interface Source {
   readonly note: string | null;
 }
 
-/** '>' more than, '>=' at least. */
-export type Op = '>' | '>=';
+/** A comparison that must hold: '>' more than, '>=' at least, '<' less than, '<=' at most. */
+export interface AtLeast { readonly hours: number; readonly op: '>' | '>=' }
+export interface AtMost { readonly hours: number; readonly op: '<' | '<=' }
 
 /** When a rule reaches the employer; a fact not given is assumed to bring it in. */
 export interface AppliesWhen {
   readonly industries?: readonly Industry[];
   readonly exceptIndustries?: readonly Industry[];
   readonly minEmployeesOnDuty?: number;
-  readonly minEmployerEmployees?: number;
+  readonly minRetailEmployees?: number;
+  readonly minLocationEmployees?: number;
 }
 
 export interface MealRule {
   readonly id: string;
-  /** every condition must hold. Hours are hours worked unless spanHours. */
+  /** every condition must hold. minWorked/maxWorked are hours worked; minSpan is first start to last end. */
   readonly trigger: {
-    readonly workedHours?: number;
-    readonly spanHours?: number;
-    readonly op?: Op;
-    readonly belowWorkedHours?: number;
-    readonly atMostWorkedHours?: number;
+    readonly minWorked?: AtLeast;
+    readonly maxWorked?: AtMost;
+    readonly minSpan?: AtLeast;
     readonly overlapsClock?: readonly [string, string];
     readonly startsBetweenClock?: readonly [string, string];
     readonly startsBefore?: string;
@@ -61,8 +61,8 @@ export interface MealRule {
     readonly endByWorkedHours?: number;
     readonly notInLastWorkedHours?: number;
     readonly clock?: readonly [string, string];
-    /** no stretch of work longer than this without a meal */
-    readonly maxStretch?: { readonly hours: number; readonly op: Op };
+    /** every stretch of work between meals must satisfy this */
+    readonly maxStretch?: AtMost;
   } | null;
   /** null: cannot be waived. {}: waivable. */
   readonly waiver: { readonly maxWorkedHours?: number; readonly requiresNotWaived?: string } | null;
@@ -79,10 +79,10 @@ export interface RestRule {
   /** 'per 4 hours or major fraction' (more than half) */
   readonly majorFraction: boolean;
   readonly minimumShiftHours: number | null;
-  /** [hours, op, count]: the last row that matches gives the count */
-  readonly table: ReadonlyArray<readonly [number, Op, number]> | null;
-  /** no stretch of work longer than this without a rest */
-  readonly maxStretch: { readonly hours: number; readonly op: Op } | null;
+  /** [hours, op, count]: the last row whose hours worked match gives the count */
+  readonly table: ReadonlyArray<readonly [number, '>' | '>=', number]> | null;
+  /** every stretch of work between rest breaks must satisfy this */
+  readonly maxStretch: AtMost | null;
   readonly paid: boolean;
   readonly waiver: { readonly maxWorkedHours?: number } | null;
   readonly appliesWhen: AppliesWhen | null;
@@ -116,7 +116,7 @@ export interface Rules {
 export function rulesFor(jurisdiction: JurisdictionInput): Rules | null;
 
 export interface Break {
-  /** 'HH:MM' on the clock; earlier than the shift's start means after midnight */
+  /** 'HH:MM' on the clock, inside a work segment (after midnight if the segment runs past it) */
   start: string;
   minutes: number;
   kind: 'meal' | 'rest';
@@ -124,20 +124,35 @@ export interface Break {
   onDuty?: boolean;
 }
 
-export interface CheckShiftInput {
+export interface Facts {
+  industry?: Industry;
+  /** people on duty at the worksite during the shift */
+  employeesOnDuty?: number;
+  /** the employer's retail employees in the jurisdiction */
+  retailEmployees?: number;
+  /** employees at this location */
+  locationEmployees?: number;
+}
+
+interface WorkdayBase {
   /** where the work is done */
   jurisdiction: JurisdictionInput;
-  /** 'YYYY-MM-DD', the day the shift starts */
+  /** 'YYYY-MM-DD', the day the workday starts */
   date: string;
-  /** 'HH:MM' */
-  start: string;
-  /** 'HH:MM'; at or before the start runs past midnight */
-  end: string;
+  /** breaks inside the work segments; a gap between segments is already off duty */
   breaks?: readonly Break[];
-  /** ids of meal rules (or 'rest') the employee validly waived for this shift */
+  /** ids of rules the employee validly waived for this day: a meal rule's id, or 'rest'. An id the jurisdiction does not have throws. */
   waived?: readonly string[];
-  facts?: { industry?: Industry; employeesOnDuty?: number; employerEmployees?: number };
+  /** a fact not given is assumed to bring a rule in, and is listed in `assumptions` */
+  facts?: Facts;
+  /** IANA zone of the workplace: spans are then real time across a daylight-saving change. Default: wall-clock time. */
+  timeZone?: string;
 }
+
+/** One stretch of work, start to end ('HH:MM'; an end at or before the start runs past midnight), or every stretch in the workday. */
+export type CheckWorkdayInput =
+  | (WorkdayBase & { start: string; end: string; segments?: never })
+  | (WorkdayBase & { segments: ReadonlyArray<{ start: string; end: string }>; start?: never; end?: never });
 
 export type RuleName =
   | 'meal_missing'
@@ -154,8 +169,8 @@ export interface Violation extends Source {
   readonly ruleId: string;
   readonly limit: number | string;
   readonly actual: number | string;
-  /** the index in `breaks` of the meal judged */
-  readonly break?: number;
+  /** the index in `breaks` of the meal judged, or null for a gap between segments */
+  readonly break?: number | null;
   /** where a too-long stretch began */
   readonly from?: string;
   readonly message: string;
@@ -176,24 +191,19 @@ export interface CheckResult {
   readonly known: boolean;
   readonly reason?: 'unknown_jurisdiction' | 'no_rule_in_force';
   readonly workedMinutes: number;
+  /** first start to last end */
+  readonly spanMinutes: number;
   readonly violations: readonly Violation[];
   /** pay the law sets for the breaches, assuming the breaks were not provided */
   readonly owed: readonly Owed[];
   readonly waivers: ReadonlyArray<{ ruleId: string; allowed: boolean }>;
   readonly notes: ReadonlyArray<{ jurisdiction: string; note: string }>;
-  /** facts not given, assumed to bring a rule in */
-  readonly assumptions: ReadonlyArray<'industry' | 'employeesOnDuty' | 'employerEmployees'>;
+  /** facts not given, assumed to bring a rule in; 'wall_clock' when no timeZone was given */
+  readonly assumptions: ReadonlyArray<keyof Facts | 'wall_clock'>;
 }
 
-/** Check one shift's breaks against the rules where the work is done. */
-export function checkShift(input: CheckShiftInput): CheckResult;
-
-/** A shift from clock punches: gaps between work segments are off-duty meals. */
-export function shiftFromPunches(input: {
-  date: string;
-  segments: ReadonlyArray<{ start: string; end: string }>;
-  restBreaks?: ReadonlyArray<{ start: string; minutes: number }>;
-}): { date: string; start: string; end: string; breaks: Break[] };
+/** Check one workday's breaks against the rules where the work is done. */
+export function checkWorkday(input: CheckWorkdayInput): CheckResult;
 
 /** The jurisdictions the tables cover, and the date they were checked. */
 export function coverage(): { asOf: string; jurisdictions: string[] };

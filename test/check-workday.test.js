@@ -6,10 +6,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { checkShift, shiftFromPunches, rulesFor, coverage, normalizeJurisdiction } = require('..');
+const { checkWorkday, rulesFor, coverage, normalizeJurisdiction } = require('..');
 
 const DATE = '2026-10-12';
-const check = (jurisdiction, start, end, breaks = [], extra = {}) => checkShift({ jurisdiction, date: DATE, start, end, breaks, ...extra });
+const check = (jurisdiction, start, end, breaks = [], extra = {}) => checkWorkday({ jurisdiction, date: DATE, start, end, breaks, ...extra });
 const rules = (r) => r.violations.map((v) => v.rule).sort();
 const meal = (start, minutes = 30, extra = {}) => ({ start, minutes, kind: 'meal', ...extra });
 const rest = (start, minutes = 10) => ({ start, minutes, kind: 'rest' });
@@ -73,7 +73,7 @@ test('a waiver counts only within the rule\'s own limits', () => {
 test('a coverage fact the caller does not give brings the rule in, and is reported', () => {
   const unknown = check('US-ND', '09:00', '15:00');
   assert.deepEqual(rules(unknown), ['meal_missing']);
-  assert.deepEqual(unknown.assumptions, ['employeesOnDuty']);
+  assert.deepEqual(unknown.assumptions, ['employeesOnDuty', 'wall_clock']);
   assert.deepEqual(rules(check('US-ND', '09:00', '15:00', [], { facts: { employeesOnDuty: 1 } })), []);
   assert.deepEqual(rules(check('US-ND', '09:00', '15:00', [], { facts: { employeesOnDuty: 2 } })), ['meal_missing']);
 });
@@ -108,7 +108,7 @@ test('a place the tables do not cover answers unknown', () => {
 });
 
 test('a shift before a rule took effect answers unknown', () => {
-  const r = checkShift({ jurisdiction: 'US-MN', date: '2025-12-31', start: '09:00', end: '17:00' });
+  const r = checkWorkday({ jurisdiction: 'US-MN', date: '2025-12-31', start: '09:00', end: '17:00' });
   assert.equal(r.known, false);
   assert.equal(r.reason, 'no_rule_in_force');
 });
@@ -120,27 +120,67 @@ test('a state with no adult rule answers known, with nothing owed', () => {
 });
 
 test('input is checked', () => {
-  assert.throws(() => checkShift(null), TypeError);
+  assert.throws(() => checkWorkday(null), TypeError);
   assert.throws(() => check('California', '09:00', '17:00'), TypeError);
-  assert.throws(() => checkShift({ jurisdiction: 'US-CA', date: '2026-02-30', start: '09:00', end: '17:00' }), TypeError);
+  assert.throws(() => checkWorkday({ jurisdiction: 'US-CA', date: '2026-02-30', start: '09:00', end: '17:00' }), TypeError);
   assert.throws(() => check('US-CA', '9:00', '17:00'), TypeError);
   assert.throws(() => check('US-CA', '09:00', '17:00', [{ start: '12:00', minutes: 30, kind: 'lunch' }]), TypeError);
-  assert.throws(() => check('US-CA', '09:00', '17:00', [meal('18:00')]), /inside the shift/);
+  assert.throws(() => check('US-CA', '09:00', '17:00', [meal('18:00')]), /inside a work segment/);
+  assert.throws(() => check('US-CA', '09:00', '17:00', [meal('16:45')]), /end inside/);
   assert.throws(() => check('US-CA', '09:00', '17:00', [meal('12:00'), rest('12:20')]), /overlap/);
   assert.throws(() => check('US-CA', '09:00', '17:00', [], { facts: { headcount: 3 } }), /Unknown fact/);
   assert.throws(() => check('US-CA', '09:00', '17:00', [], { facts: { industry: 'salon' } }), /industry/);
 });
 
-test('shiftFromPunches reads the gaps between punches as off-duty meals', () => {
-  const shift = shiftFromPunches({ date: DATE, segments: [{ start: '09:00', end: '13:00' }, { start: '13:30', end: '17:30' }], restBreaks: [{ start: '11:00', minutes: 10 }, { start: '15:00', minutes: 10 }] });
-  assert.deepEqual(shift, {
-    date: DATE, start: '09:00', end: '17:30',
-    breaks: [{ start: '13:00', minutes: 30, kind: 'meal' }, { start: '11:00', minutes: 10, kind: 'rest' }, { start: '15:00', minutes: 10, kind: 'rest' }],
-  });
-  assert.deepEqual(rules(checkShift({ jurisdiction: 'US-CA', ...shift })), []);
-  const night = shiftFromPunches({ date: DATE, segments: [{ start: '22:00', end: '01:00' }, { start: '01:30', end: '06:00' }] });
-  assert.deepEqual([night.start, night.end, night.breaks[0].start, night.breaks[0].minutes], ['22:00', '06:00', '01:00', 30]);
-  assert.throws(() => shiftFromPunches({ date: DATE, segments: [] }), TypeError);
+test('a workday of several segments: the gaps between them are off duty and count as meals', () => {
+  const punches = (segments, breaks = [], extra = {}) => checkWorkday({ jurisdiction: 'US-CA', date: DATE, segments, breaks, ...extra });
+  // Clocked out 13:00–13:30: that gap is the meal.
+  assert.deepEqual(rules(punches([{ start: '09:00', end: '13:00' }, { start: '13:30', end: '17:30' }], [rest('11:00'), rest('15:00')])), []);
+  // A split shift, 09–13 and 17–21: 8 hours in the workday, so it earns two rest breaks.
+  const split = punches([{ start: '09:00', end: '13:00' }, { start: '17:00', end: '21:00' }], [rest('11:00')]);
+  assert.equal(split.workedMinutes, 480);
+  assert.deepEqual(rules(split), ['rest_missing']);
+  // Checked one shift at a time, each half would need nothing: the workday is what counts.
+  assert.deepEqual(rules(check('US-CA', '09:00', '13:00', [rest('11:00')])), []);
+  // A night workday across midnight, clocked out 01:00–01:30.
+  const night = punches([{ start: '22:00', end: '01:00' }, { start: '01:30', end: '06:00' }], [rest('23:30'), rest('03:30')]);
+  assert.equal(night.workedMinutes, 450);
+  assert.deepEqual(rules(night), []);
+  assert.throws(() => punches([]), TypeError);
+  assert.throws(() => punches([{ start: '09:00', end: '13:00' }, { start: '12:00', end: '17:00' }]), TypeError);
+  assert.throws(() => checkWorkday({ jurisdiction: 'US-CA', date: DATE, start: '09:00', end: '17:00', segments: [{ start: '09:00', end: '17:00' }] }), /not both/);
+});
+
+test('with a time zone, a workday across a daylight-saving change counts real time', () => {
+  // Los Angeles falls back at 02:00 on 2026-11-01: 22:00 to 06:00 is 9 hours.
+  const fall = { jurisdiction: 'US-CA', date: '2026-10-31', start: '22:00', end: '06:00', breaks: [meal('03:00'), rest('00:00'), rest('05:00')] };
+  const wall = checkWorkday(fall);
+  assert.equal(wall.workedMinutes, 450);
+  assert.deepEqual(rules(wall), []);
+  assert.ok(wall.assumptions.includes('wall_clock'));
+  const real = checkWorkday({ ...fall, timeZone: 'America/Los_Angeles' });
+  assert.equal(real.workedMinutes, 510);
+  assert.deepEqual(rules(real), ['meal_too_late']);
+  assert.ok(!real.assumptions.includes('wall_clock'));
+  // Spring forward on 2026-03-08: 22:00 to 06:00 is 7 hours, and 02:30 never happens.
+  const spring = { jurisdiction: 'US-TX', date: '2026-03-07', start: '22:00', end: '06:00', timeZone: 'America/Chicago' };
+  assert.equal(checkWorkday(spring).workedMinutes, 420);
+  assert.throws(() => checkWorkday({ ...spring, breaks: [rest('02:30')] }), /does not exist/);
+  assert.throws(() => checkWorkday({ ...spring, timeZone: 'Mars/Olympus' }), /timeZone/);
+});
+
+test('options and waivers are checked', () => {
+  assert.throws(() => checkWorkday({ jurisdiction: 'US-CA', date: DATE, start: '09:00', end: '17:00', timezone: 'UTC' }), /Unknown option/);
+  assert.throws(() => check('US-NY', '09:00', '17:00', [], { waived: ['meal'] }), /not a rule in US-NY/);
+  assert.throws(() => check('US-CA', '09:00', '17:00', [], { waived: 'meal' }), TypeError);
+  assert.throws(() => check('US-CA', '09:00', '17:00', [], { facts: { employeesOnDuty: -1 } }), TypeError);
+});
+
+test('every documented name imports through ESM', async () => {
+  const mod = await import('../index.js');
+  for (const name of ['checkWorkday', 'rulesFor', 'coverage', 'normalizeJurisdiction', 'AS_OF', 'INDUSTRIES']) {
+    assert.ok(name in mod, name);
+  }
 });
 
 test('jurisdictions', () => {

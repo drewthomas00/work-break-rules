@@ -5,10 +5,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { checkShift, coverage, rulesFor } = require('..');
+const { checkWorkday, coverage, rulesFor } = require('..');
 
 const DATE = '2026-10-12';
-const check = (jurisdiction, start, end, breaks = [], extra = {}) => checkShift({ jurisdiction, date: DATE, start, end, breaks, ...extra });
+const check = (jurisdiction, start, end, breaks = [], extra = {}) => checkWorkday({ jurisdiction, date: DATE, start, end, breaks, ...extra });
 const rules = (r) => r.violations.map((v) => v.rule).sort();
 const meal = (start, minutes = 30, extra = {}) => ({ start, minutes, kind: 'meal', ...extra });
 const rest = (start, minutes = 10) => ({ start, minutes, kind: 'rest' });
@@ -55,15 +55,17 @@ test('Kentucky: lunch between hour 3 and hour 5 of any shift over 3 hours, and 1
 });
 
 test('Maryland: retail only, from 50 retail employees; 15 minutes at 4–6 hours, 30 over 6', () => {
-  const big = { facts: { industry: 'retail', employerEmployees: 60 } };
+  const big = { facts: { industry: 'retail', retailEmployees: 60, locationEmployees: 12 } };
   assert.deepEqual(rules(check('US-MD', '09:00', '13:00', [], big)), ['rest_missing']);
   assert.deepEqual(rules(check('US-MD', '09:00', '13:00', [rest('11:00', 15)], big)), []);
   assert.deepEqual(rules(check('US-MD', '09:00', '13:00', [], { ...big, waived: ['rest'] })), []);
   assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [meal('12:00')], big)), []);
   assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [rest('11:00', 15)], big)), ['meal_missing']);
   assert.deepEqual(rules(check('US-MD', '08:00', '18:30', [meal('12:00')], big)), ['rest_missing']);
-  assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [], { facts: { industry: 'restaurant', employerEmployees: 60 } })), []);
-  assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [], { facts: { industry: 'retail', employerEmployees: 49 } })), []);
+  assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [], { facts: { industry: 'restaurant', retailEmployees: 60, locationEmployees: 12 } })), []);
+  assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [], { facts: { industry: 'retail', retailEmployees: 49, locationEmployees: 12 } })), []);
+  // A single location with 5 or fewer employees is exempt.
+  assert.deepEqual(rules(check('US-MD', '09:00', '15:31', [], { facts: { industry: 'retail', retailEmployees: 60, locationEmployees: 5 } })), []);
 });
 
 test('Massachusetts: more than 6 hours', () => {
@@ -96,16 +98,16 @@ test('Nebraska: assembling plants, workshops and mechanical establishments only'
   assert.deepEqual(rules(check('US-NE', '08:00', '16:00', [], { facts: { industry: 'manufacturing' } })), ['meal_missing']);
   const unknown = check('US-NE', '08:00', '16:00');
   assert.deepEqual(rules(unknown), ['meal_missing']);
-  assert.deepEqual(unknown.assumptions, ['industry']);
+  assert.deepEqual(unknown.assumptions, ['industry', 'wall_clock']);
 });
 
-test('Nevada: no 8 continuous hours without a meal; rest per 4 hours or major fraction from 3½', () => {
-  const two = { facts: { employeesOnDuty: 2 } };
+test('Nevada: no 8 continuous hours without a meal; rest per 4 hours or major fraction from 3½; not at a one-person workplace', () => {
+  const two = { facts: { locationEmployees: 2 } };
   assert.deepEqual(rules(check('US-NV', '09:00', '16:59', [rest('11:00'), rest('14:00')], two)), []);
   assert.deepEqual(rules(check('US-NV', '09:00', '17:00', [rest('11:00'), rest('14:00')], two)), ['meal_missing']);
   assert.deepEqual(rules(check('US-NV', '09:00', '12:29', [], two)), []);
   assert.deepEqual(rules(check('US-NV', '09:00', '12:30', [], two)), ['rest_missing']);
-  assert.deepEqual(rules(check('US-NV', '09:00', '17:00', [], { facts: { employeesOnDuty: 1 } })), []);
+  assert.deepEqual(rules(check('US-NV', '09:00', '17:00', [], { facts: { locationEmployees: 1 } })), []);
 });
 
 test('New York: the noonday, night and evening meals', () => {
@@ -163,8 +165,10 @@ test('Washington: meal between hour 2 and 5, every 5 hours; rest every 3 hours',
   assert.deepEqual(rules(check('US-WA', '09:00', '15:00', [meal('10:30'), rest('10:00'), rest('13:30')])), ['meal_too_early']);
   // A 12-hour shift with one meal at hour 3: more than 5 hours after it.
   assert.deepEqual(rules(check('US-WA', '07:00', '19:30', [meal('10:00'), rest('09:00'), rest('12:00'), rest('15:00'), rest('17:30')])), ['meal_too_late']);
-  // A rest at hour 1 and then 4 hours with none.
-  assert.deepEqual(rules(check('US-WA', '09:00', '15:00', [meal('12:00'), rest('09:30'), rest('14:30')])), ['rest_late']);
+  // A rest at hour 1 and then 4 hours with none: the late rest is owed as 10 minutes' pay.
+  const late = check('US-WA', '09:00', '15:00', [meal('12:00'), rest('09:30'), rest('14:30')]);
+  assert.deepEqual(rules(late), ['rest_late']);
+  assert.deepEqual(late.owed.map((o) => [o.kind, o.minutes]), [['rest_time_pay', 10]]);
 });
 
 test('West Virginia: 20 minutes for 6 hours; Vermont: a note, nothing checked', () => {
