@@ -26,7 +26,7 @@ npm install work-break-rules
 
 **It is the workday that counts.** A split shift of 9–1 and 5–9 is 8 hours of work in California, not two 4-hour shifts. Pass every stretch of work in the day.
 
-**Coverage depends on facts about the employer.** Maryland's rule is for retail employers with 50 or more retail employees; North Dakota's applies only with two people on duty; Nevada's not where one person works alone; Nebraska's only to "workshops and mechanical establishments". A fact you don't pass is assumed to bring the rule in, and is reported.
+**Coverage depends on facts about the employer.** Maryland's rule is for retail employers with 50 or more retail employees; North Dakota's applies only with two people on duty; Nevada's not where only one person is employed at the workplace; Nebraska's only to "workshops and mechanical establishments". A fact you don't pass is assumed to bring the rule in, and is reported.
 
 **"No rule" is an answer; "unknown" is not.** Most states have no adult break law, and say so. A place the tables do not cover answers `known: false`.
 
@@ -50,7 +50,7 @@ checkWorkday({
 // {
 //   jurisdiction: 'US-CA', known: true, workedMinutes: 480, spanMinutes: 510,
 //   violations: [
-//     { rule: 'meal_too_late', ruleId: 'meal', limit: '5 h', actual: '6 h', break: 1,
+//     { rule: 'meal_too_late', ruleId: 'meal', limit: 300, actual: 360, break: 1, at: 360,
 //       jurisdiction: 'US-CA', citations: [{ citation: 'IWC Wage Order 2-2001, § 11(A)–(C) …', sourceUrl: 'https://…' }, …],
 //       confidence: 'high', note: '…', message: 'The meal at 15:00 starts after 6 h worked; the limit is 5 h' },
 //     { rule: 'rest_missing', ruleId: 'rest', limit: 2, actual: 1, … },
@@ -84,7 +84,7 @@ The gaps between segments are off duty, and count as meals. A split shift is the
 | `jurisdiction` | — | `'US-CA'`, or `{ country: 'US', subdivision: 'CA' }`. Where the work is done. |
 | `date` | — | `'YYYY-MM-DD'`, the day the workday starts. A day before a rule's `effectiveFrom` answers `known: false`. |
 | `start`, `end` | — | `'HH:MM'`, for one stretch of work. An end at or before the start runs past midnight. |
-| `segments` | — | Instead of `start`/`end`: every stretch of work in the workday, in order, `{ start, end }`. Each time is after the one before it, rolling past midnight; the whole day must fit in 24 hours. |
+| `segments` | — | Instead of `start`/`end`: every stretch of work in the workday, in order, `{ start, end }`. Each time is placed at the first moment after the one before it at which the clock reads it — later the same day or the next. The whole day must fit in 24 hours of real time. |
 | `breaks` | `[]` | `{ start, minutes, kind: 'meal' \| 'rest', onDuty? }`, each inside a segment. An off-duty meal is not time worked; a rest break and an on-duty meal are. |
 | `waived` | `[]` | Ids of rules the employee validly waived for this day — a meal rule's `id` (see `rulesFor`), or `'rest'`. A waiver the rule does not allow is reported in `waivers` with `allowed: false`, and the rule is checked anyway. An id the jurisdiction does not have throws. |
 | `facts` | `{}` | `industry` (`retail`, `restaurant`, `personal_service`, `manufacturing`, `office`, `healthcare`, `other`), `employeesOnDuty` (people on duty at the worksite), `retailEmployees` (the employer's retail employees in the state), `locationEmployees` (employees at this location). |
@@ -99,19 +99,21 @@ Unknown option names throw. Hours in every rule are **hours worked**: time on th
 | `meal_missing` | A meal rule applies and no meal was given (or none that counts — an on-duty meal where the rule needs relief). |
 | `meal_too_short` | The meal is shorter than the rule's minutes. |
 | `meal_too_early` / `meal_too_late` | Outside the rule's window in hours worked, or a stretch of work longer than the rule allows without a meal. |
-| `meal_outside_hours` | Outside a clock window (New York). |
+| `meal_outside_hours` | Outside a clock window (New York); `window` and `given` hold the times. |
 | `rest_missing` | Fewer rest breaks of the required length than the hours worked earn. |
 | `rest_late` | A stretch of work longer than the rule allows without a rest. |
 
-Each meal rule takes its own meal: one meal never satisfies two rules.
+`rule` says what went wrong; `ruleId` says which rule (a meal rule's `id`, or `'rest'`). `limit` and `actual` are minutes — a meal's length, or time worked — except for `rest_missing`, where they count breaks. `at` is where the problem begins, in real minutes from the start of the workday; `message` says it in words.
+
+Each meal rule takes its own meal, and meals are matched to rules as a whole: a day passes if any assignment of its meals satisfies every rule. A miss is reported against the longest meal no rule took.
 
 ### What is owed
 
-`owed` lists the pay the law sets for the breaches found: California's extra hour of pay per workday for a missed meal and another for a missed rest; the minutes of each missed or late rest break in Colorado, Minnesota and Washington. It **assumes the break was not provided**. Several states, California among them, owe nothing when the employer provided the break and the employee chose to skip it — punches alone cannot tell the difference, so record that separately. Fines payable to the state are in each rule's `penalty.description`, not in `owed`.
+`owed` lists the pay the law sets for the breaches found: California's extra hour of pay per workday for a missed meal and another for a missed rest (`premium_pay`, in hours); the minutes of each missed or late rest break in Colorado and Washington, and of each missed meal or rest break in Minnesota, doubled there for its liquidated damages (`break_time_pay`, in minutes). It **assumes the break was not provided**. Several states, California among them, owe nothing when the employer provided the break and the employee chose to skip it — punches alone cannot tell the difference, so record that separately. Fines payable to the state are in each rule's `penalty.description`, not in `owed`.
 
-### `rulesFor(jurisdiction)`
+### `rulesFor(jurisdiction, { on? })`
 
-The table entry: `{ effectiveFrom, meals, rest, penalty, unchecked, basis }`, or `null` for a place the tables do not cover. `basis` says where a jurisdiction with no rule was checked; `unchecked` lists rules that cannot be checked against a schedule (Vermont's "reasonable opportunities to eat", New York's "midway" timing).
+The rules in force on `on` (`'YYYY-MM-DD'`), or the current ones: `{ effectiveFrom, meals, rest, penalty, unchecked, basis }`, or `null` for a place the tables do not cover. A day is always checked against the rules in force that day: Minnesota before 2026 and Illinois before 2023 have their earlier rules. `basis` says where a jurisdiction with no rule was checked; `unchecked` lists rules that cannot be checked against a schedule (Vermont's "reasonable opportunities to eat", New York's "midway" timing).
 
 ## How the tables are encoded
 
@@ -133,15 +135,15 @@ As of 2026-10-11.
 | US-IL | 20 min at 7½ h, starting within 5 h; more every 4½ h | — | | high |
 | US-KY | lunch between hour 3 and 5 | 10 min per 4 h | | high |
 | US-MA | more than 6 h | — | | high |
-| US-MD | retail, 50+ employees: more than 6 h | retail: 15 min at 4–6 h; more from 8 h | | high |
+| US-MD | retail, 50+ retail employees, location of 6+: more than 6 h | retail: 15 min at 4–6 h; more from 8 h | | high |
 | US-ME | no more than 6 consecutive hours without | — | | high |
-| US-MN | 6 h (since 2026-01-01) | 15 min within every 4 consecutive hours | missed break time | high |
+| US-MN | 6 h (since 2026-01-01) | 15 min within every 4 consecutive hours | missed break time, doubled | high |
 | US-ND | more than 5 h, 2+ on duty | — | | high |
 | US-NE | 8 h, manufacturing only | — | | high |
 | US-NH | no more than 5 consecutive hours without | — | | high |
 | US-NV | no 8 continuous hours without | 10 min per 4 h or major fraction, from 3½ h | | high |
 | US-NY | 11–2 for a shift over 6 h; 45 min for a night start; 20 min 5–7 p.m. | — | | high |
-| US-OR | 6 h, finished before hour 5 or 6 begins; second at 14 h | 10 min per 4 h or major fraction | | high |
+| US-OR | 6 h, finished before hour 5 or 6 begins; more at 14 and 22 h | 10 min per 4 h or major fraction | | high |
 | US-RI | 20 min at 6 h, 30 at 8 h; 3+ on the shift | — | | high |
 | US-TN | 6 h, not in the first hour | — | | medium |
 | US-VT | reasonable opportunity to eat (not checked) | — | | high |
@@ -156,7 +158,9 @@ These are judgment calls and gaps a user should know about before relying on a r
 
 - **The workday is yours to assemble.** The checker sees only the segments you pass. California and most states count a workday as a fixed 24-hour period; split it differently and the hours change.
 - **Without `timeZone`, time is wall-clock time.** An overnight day across a daylight-saving change is off by an hour; `assumptions` says `'wall_clock'`.
-- **New York.** The statute's noonday meal applies to a shift "extending over" 11 a.m.–2 p.m.; the tables read that as a shift of more than 6 hours that starts before 1 p.m. and overlaps the window (a shift starting after 1 p.m. takes the night-shift meal instead). The night-shift meal's "midway" timing is not checked.
+- **New York.** The statute's noonday meal applies to a shift "extending over" 11 a.m.–2 p.m., and its night meal to a shift starting between 1 p.m. and 6 a.m. The tables read them as alternatives by start time: a shift of more than 6 hours starting between 6 a.m. and 1 p.m. that overlaps 11–2 by at least 30 minutes takes the noonday meal; one starting between 1 p.m. and 6 a.m. takes the night meal. The night meal's "midway" timing is not checked.
+- **The repeated hour.** When the clocks go back, a time that follows a time in the first occurrence of the repeated hour reads as its second occurrence; a break inside the repeated hour reads as its first. There is no way to name the occurrence explicitly.
+- **Further meals.** Oregon's meals after the first (at 14 and 22 hours) and Illinois's (every further 4½ hours) are counted, but when they are taken is not checked.
 - **Stricter readings that will flag some lawful days:** Kentucky's lunch on any shift over 3 hours at 30 minutes, Colorado's "to the extent practical" first and last hour, Nevada's statutory "major fraction", Maryland's extra rest from 8 hours, New York's 45-minute night meal, Washington's rest break on a shift just over 3 hours, Maine's meal for every 6-hour stretch. Each is in its rule's `note`.
 - **Exemptions not encoded** because they depend on facts the input does not carry: Oregon's lone retail worker, Maine's small workplace with frequent paid breaks, Tennessee's "ample opportunity to rest", Connecticut's employer giving 30 paid minutes, agency-granted exemptions, and collective bargaining agreements everywhere (pass those as waivers where the law lets an agreement replace the rule).
 - **Timing "near the middle"** of a work period (California, Colorado, Oregon, Washington rest breaks) is guidance the checker does not test.
@@ -180,7 +184,7 @@ Break law changes — Minnesota rewrote its rules for 2026, Colorado reissues it
 
 ## Contributing
 
-Every number needs a linkable source. A correction should cite the provision, link the official text if it can be reached, and say what changed and from when. A change in the law is a new `effectiveFrom`, not an edit that rewrites the past.
+Every number needs a linkable source. A correction should cite the provision, link the official text if it can be reached, and say what changed and from when. A change in the law is a new version with its `effectiveFrom` (a jurisdiction may be a list of versions, oldest first), not an edit that rewrites the past.
 
 ## Testing
 

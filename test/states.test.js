@@ -168,7 +168,7 @@ test('Washington: meal between hour 2 and 5, every 5 hours; rest every 3 hours',
   // A rest at hour 1 and then 4 hours with none: the late rest is owed as 10 minutes' pay.
   const late = check('US-WA', '09:00', '15:00', [meal('12:00'), rest('09:30'), rest('14:30')]);
   assert.deepEqual(rules(late), ['rest_late']);
-  assert.deepEqual(late.owed.map((o) => [o.kind, o.minutes]), [['rest_time_pay', 10]]);
+  assert.deepEqual(late.owed.map((o) => [o.kind, o.minutes]), [['break_time_pay', 10]]);
 });
 
 test('West Virginia: 20 minutes for 6 hours; Vermont: a note, nothing checked', () => {

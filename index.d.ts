@@ -1,5 +1,5 @@
 /**
- * work-break-rules — does this shift give the meal and rest breaks the law
+ * work-break-rules — does this workday give the meal and rest breaks the law
  * requires here?
  *
  * NOT LEGAL ADVICE. US federal law and the 50 states and DC, for adult
@@ -25,7 +25,7 @@ export interface Source {
   readonly jurisdiction: string;
   readonly citations: readonly Citation[];
   readonly confidence: Confidence;
-  readonly note: string | null;
+  readonly note: string;
 }
 
 /** A comparison that must hold: '>' more than, '>=' at least, '<' less than, '<=' at most. */
@@ -54,6 +54,8 @@ export interface MealRule {
     readonly endsAfter?: string;
   };
   readonly minutes: number;
+  /** one more meal for every further `everyHours` worked past trigger.minWorked */
+  readonly repeat?: { readonly everyHours: number };
   /** positions are hours worked when the meal starts (endBy: start plus its length) */
   readonly window: {
     readonly notBeforeWorkedHours?: number;
@@ -94,13 +96,13 @@ export interface RestRule {
 export interface Penalty {
   /** pay owed to the employee per workday a compliant break is not provided */
   readonly premiumHours: { readonly meal: number; readonly rest: number } | null;
-  /** a missed rest break is owed as pay for its length */
-  readonly missedRestPaid: boolean;
+  /** a missed break is owed as pay for its own length, times `multiplier` where the law adds damages */
+  readonly breakTimePaid: { readonly meal: boolean; readonly rest: boolean; readonly multiplier: number } | null;
   readonly description: string;
   readonly citations: readonly Citation[];
 }
 
-/** One jurisdiction's table entry. */
+/** One jurisdiction's rules, as in force from `effectiveFrom`. */
 export interface Rules {
   readonly effectiveFrom: string | null;
   readonly meals: readonly MealRule[];
@@ -112,8 +114,8 @@ export interface Rules {
   readonly basis: { readonly citations: readonly Citation[]; readonly confidence: Confidence; readonly note: string } | null;
 }
 
-/** The table entry for a place, or null when the tables do not cover it. */
-export function rulesFor(jurisdiction: JurisdictionInput): Rules | null;
+/** The rules for a place: in force on `on` ('YYYY-MM-DD'), or the current ones. null when the tables do not cover the place or hold no rule in force that day. */
+export function rulesFor(jurisdiction: JurisdictionInput, options?: { on?: string }): Rules | null;
 
 export interface Break {
   /** 'HH:MM' on the clock, inside a work segment (after midnight if the segment runs past it) */
@@ -164,11 +166,18 @@ export type RuleName =
   | 'rest_late';
 
 export interface Violation extends Source {
+  /** what went wrong */
   readonly rule: RuleName;
-  /** the meal rule's id, or 'rest' */
+  /** which rule: a meal rule's id, or 'rest' */
   readonly ruleId: string;
-  readonly limit: number | string;
-  readonly actual: number | string;
+  /** minutes (a meal's length, or time worked), or for rest_missing a count of breaks; null for meal_outside_hours */
+  readonly limit: number | null;
+  readonly actual: number | null;
+  /** meal_outside_hours: the clock window, and the meal's own times, 'HH:MM–HH:MM' */
+  readonly window?: string;
+  readonly given?: string;
+  /** real minutes from the workday's start where the problem begins: the meal judged, or a too-long stretch */
+  readonly at?: number;
   /** the index in `breaks` of the meal judged, or null for a gap between segments */
   readonly break?: number | null;
   /** where a too-long stretch began */
@@ -176,14 +185,15 @@ export interface Violation extends Source {
   readonly message: string;
 }
 
-export interface Owed {
-  readonly kind: 'premium_pay' | 'rest_time_pay';
+interface OwedBase {
   readonly for: 'meal' | 'rest';
-  readonly hours?: number;
-  readonly minutes?: number;
   readonly jurisdiction: string;
   readonly citations: readonly Citation[];
 }
+/** Pay the law sets for the breaches found, assuming the breaks were not provided. */
+export type Owed =
+  | (OwedBase & { readonly kind: 'premium_pay'; readonly hours: number })
+  | (OwedBase & { readonly kind: 'break_time_pay'; readonly minutes: number });
 
 export interface CheckResult {
   readonly jurisdiction: string;

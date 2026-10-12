@@ -5,14 +5,19 @@
  *
  * The caller gives wall-clock times: the work segments (clock-in to clock-out,
  * or a planned shift's start and end) and the breaks inside them. Each time is
- * placed after the one before it, rolling to the next day where the clock goes
- * backwards. With a time zone, each wall-clock time becomes an instant and the
- * timeline counts real minutes; without one, it counts wall-clock minutes.
+ * placed at the first moment, after the time before it, at which the clock
+ * reads it — later the same day, or the next day. With a time zone those
+ * moments are instants, so a day across a daylight-saving change counts the
+ * hour it gains or loses, and a time in the repeated hour after the clocks go
+ * back reads as its second occurrence when it follows a time in the first.
+ * Without one, they are wall-clock minutes.
  */
 
 const { parseDate, minutes, clock, describe, zoneFormat, wallAt, instantsOf, DAY, MINUTE } = require('./time');
 
 const KINDS = ['meal', 'rest'];
+const SEGMENT_KEYS = ['start', 'end'];
+const BREAK_KEYS = ['start', 'minutes', 'kind', 'onDuty'];
 
 /**
  * @typedef {object} Pause
@@ -21,7 +26,7 @@ const KINDS = ['meal', 'rest'];
  * @property {number} minutes
  * @property {boolean} onDuty - a meal eaten while working: time worked, and paid
  * @property {number | null} index - its index in `breaks`, or null for a gap between segments
- * @property {number} [workedBefore]
+ * @property {number} workedBefore - minutes worked when it starts
  */
 
 /**
@@ -34,13 +39,117 @@ const KINDS = ['meal', 'rest'];
  * @property {number} endWall - the last end on the same scale (past 1440 the next day)
  * @property {(t: number) => number} workedAt - minutes worked by real minute t
  * @property {(t: number) => string} wallClock - 'HH:MM' on the wall clock at real minute t
- * @property {(a: number, b: number) => [number, number]} clockWindow - a daily wall-clock window as real minutes, the copy that meets the workday
+ * @property {(a: number, b: number) => [number, number]} clockWindow - a daily wall-clock window [a, b) as real minutes, the copy that meets the workday
  * @property {boolean} zoned
  */
 
 /**
+ * The moments, in absolute minutes, at which the workplace clock reads `w`
+ * minutes after the midnight that begins `date` (w may run into the next day).
+ * @param {string} date
+ * @param {string | undefined} tz
+ * @returns {(w: number) => number[]}
+ */
+function momentsOf(date, tz) {
+  if (!tz) return (w) => [w];
+  return (w) => instantsOf(date, w, tz).map((e) => Math.round(e / MINUTE));
+}
+
+/**
+ * Refuse keys a caller did not mean: a typo must not change the answer.
+ * @param {Record<string, unknown>} o
+ * @param {string[]} allowed
+ * @param {string} what
+ */
+function onlyKeys(o, allowed, what) {
+  for (const k of Object.keys(o)) if (!allowed.includes(k)) throw new TypeError(`${what} has unknown key ${describe(k)}; expected ${allowed.join(', ')}`);
+}
+
+/**
+ * Read the work segments: wall-clock times, each placed after the last.
+ * @param {any} input - the checker's options; any until checked here
+ * @param {(w: number) => number[]} moments
+ * @param {string | undefined} tz
+ * @returns {{ segments: Array<{ s: number, e: number }>, origin: number, startWall: number, endWall: number }}
+ */
+function readSegments(input, moments, tz) {
+  let raw;
+  if (input.segments !== undefined) {
+    if (input.start !== undefined || input.end !== undefined) throw new TypeError('give start and end, or segments, not both');
+    if (!Array.isArray(input.segments) || !input.segments.length) throw new TypeError('segments must be a non-empty array of { start, end }');
+    raw = input.segments.map((s, i) => {
+      if (!s || typeof s !== 'object') throw new TypeError(`segments[${i}] must be { start, end }`);
+      onlyKeys(s, SEGMENT_KEYS, `segments[${i}]`);
+      return [minutes(`segments[${i}].start`, s.start), minutes(`segments[${i}].end`, s.end), `segments[${i}]`];
+    });
+  } else {
+    raw = [[minutes('start', input.start), minutes('end', input.end), 'the shift']];
+  }
+
+  const first = moments(raw[0][0]);
+  if (!first.length) throw new TypeError(`${raw[0][2]}.start: ${clock(raw[0][0])} does not exist on ${input.date} in ${tz} (the clocks go forward)`);
+  const origin = first[0];
+  let prev = origin; let prevWall = raw[0][0];
+  /**
+   * The first moment after `prev` (or at it, unless strict) at which the clock reads `m`.
+   * @param {number} m
+   * @param {boolean} strict
+   * @param {string} what
+   */
+  const place = (m, strict, what) => {
+    for (const w of [m, m + DAY, m + 2 * DAY]) {
+      const at = moments(w).find((x) => (strict ? x > prev : x >= prev));
+      if (at !== undefined) {
+        if (at - origin > DAY) break;
+        prev = at; prevWall = w;
+        return at;
+      }
+    }
+    throw new TypeError(`${what}: ${clock(m)} ${moments(m).length || !tz ? 'is more than 24 hours after the start' : `does not exist on that day in ${tz} (the clocks go forward)`}; a workday is checked within 24 hours`);
+  };
+  const segments = raw.map(([s, e, what], i) => {
+    // A segment may start the minute the last one ended; it must end after it starts.
+    const start = i === 0 ? origin : place(s, false, `${what}.start`);
+    const end = place(e, true, `${what}.end`);
+    return { s: start - origin, e: end - origin };
+  });
+  return { segments, origin, startWall: raw[0][0], endWall: prevWall };
+}
+
+/**
+ * Read the breaks, each inside a work segment.
+ * @param {unknown} breaks
+ * @param {Array<{ s: number, e: number }>} segments
+ * @param {(w: number) => number[]} moments
+ * @param {number} origin
+ * @returns {Pause[]}
+ */
+function readBreaks(breaks, segments, moments, origin) {
+  if (breaks === undefined) return [];
+  if (!Array.isArray(breaks)) throw new TypeError('breaks must be an array');
+  return breaks.map((b, i) => {
+    const what = `breaks[${i}]`;
+    if (!b || typeof b !== 'object') throw new TypeError(`${what} must be an object`);
+    onlyKeys(b, BREAK_KEYS, what);
+    if (!KINDS.includes(b.kind)) throw new TypeError(`${what}.kind must be 'meal' or 'rest', got ${describe(b.kind)}`);
+    if (!Number.isInteger(b.minutes) || b.minutes <= 0) throw new TypeError(`${what}.minutes must be a whole number of minutes above 0`);
+    if (b.onDuty !== undefined && typeof b.onDuty !== 'boolean') throw new TypeError(`${what}.onDuty must be true or false`);
+    const m = minutes(`${what}.start`, b.start);
+    const ts = [m, m + DAY].flatMap(moments).map((x) => x - origin);
+    const start = ts.sort((x, y) => x - y).find((t) => segments.some((sg) => t >= sg.s && t < sg.e));
+    if (start === undefined) {
+      if ([m, m + DAY].some((w) => !moments(w).length)) throw new TypeError(`${what}.start: ${clock(m)} does not exist on that day in the workplace's time zone (the clocks go forward)`);
+      throw new TypeError(`${what} must start inside a work segment`);
+    }
+    const seg = segments.find((sg) => start >= sg.s && start < sg.e);
+    if (start + b.minutes > /** @type {{ e: number }} */ (seg).e) throw new TypeError(`${what} must end inside its work segment`);
+    return { kind: b.kind, start, minutes: b.minutes, onDuty: b.onDuty === true, index: i, workedBefore: 0 };
+  });
+}
+
+/**
  * Read a workday from the checker's input.
- * @param {{ date: unknown, start?: unknown, end?: unknown, segments?: unknown, breaks?: unknown, timeZone?: unknown }} input
+ * @param {any} input - the checker's options; any until checked here
  * @returns {Workday}
  */
 function readWorkday(input) {
@@ -49,72 +158,16 @@ function readWorkday(input) {
   const tz = input.timeZone;
   if (tz !== undefined && typeof tz !== 'string') throw new TypeError('timeZone must be a string');
   if (tz !== undefined) zoneFormat(tz);
+  const moments = momentsOf(date, tz);
 
-  let raw;
-  if (input.segments !== undefined) {
-    if (input.start !== undefined || input.end !== undefined) throw new TypeError('give start and end, or segments, not both');
-    if (!Array.isArray(input.segments) || !input.segments.length) throw new TypeError('segments must be a non-empty array of { start, end }');
-    raw = input.segments.map((s, i) => {
-      if (!s || typeof s !== 'object') throw new TypeError(`segments[${i}] must be { start, end }`);
-      return [minutes(`segments[${i}].start`, s.start), minutes(`segments[${i}].end`, s.end), `segments[${i}]`];
-    });
-  } else {
-    raw = [[minutes('start', input.start), minutes('end', input.end), 'the shift']];
-  }
-
-  // Wall-clock minutes from the date's midnight, each after the last.
-  let prev = -1;
-  const place = (m, what, strictlyAfter) => {
-    let w = m;
-    while (strictlyAfter ? w <= prev : w < prev) w += DAY;
-    if (w - raw[0][0] >= DAY) throw new TypeError(`${what}: a workday is checked within 24 hours of its start`);
-    prev = w;
-    return w;
-  };
-  const walls = raw.map(([s, e, what]) => {
-    // A segment may start the minute the last one ended; it must end after it starts.
-    const ws = place(s, `${what}.start`, false);
-    const we = place(e, `${what}.end`, true);
-    return [ws, we];
-  });
-
-  // Real minutes for a wall-clock time, no earlier than `notBefore`.
-  let toReal; let epoch0 = 0;
-  if (tz) {
-    epoch0 = firstInstant(date, walls[0][0], tz, -Infinity, 'start');
-    toReal = (w, notBefore, what) => (firstInstant(date, w, tz, epoch0 + notBefore * MINUTE, what) - epoch0) / MINUTE;
-  } else {
-    toReal = (w) => w - walls[0][0];
-  }
-  let last = 0;
-  const segments = walls.map(([ws, we], i) => {
-    const s = toReal(ws, last, `${raw[i][2]}.start`);
-    const e = toReal(we, s, `${raw[i][2]}.end`);
-    if (e <= s) throw new TypeError(`${raw[i][2]} must end after it starts`);
-    last = e;
-    return { s, e, ws, we };
-  });
-
+  const { segments, origin, startWall, endWall } = readSegments(input, moments, tz);
+  /** @type {Pause[]} */
   const pauses = [];
   for (let i = 1; i < segments.length; i++) {
-    if (segments[i].s > segments[i - 1].e) pauses.push({ kind: 'meal', start: segments[i - 1].e, minutes: segments[i].s - segments[i - 1].e, onDuty: false, index: null });
+    const gap = segments[i].s - segments[i - 1].e;
+    if (gap > 0) pauses.push({ kind: 'meal', start: segments[i - 1].e, minutes: gap, onDuty: false, index: null, workedBefore: 0 });
   }
-
-  const breaks = input.breaks === undefined ? [] : input.breaks;
-  if (!Array.isArray(breaks)) throw new TypeError('breaks must be an array');
-  breaks.forEach((b, i) => {
-    if (!b || typeof b !== 'object') throw new TypeError(`breaks[${i}] must be an object`);
-    if (!KINDS.includes(b.kind)) throw new TypeError(`breaks[${i}].kind must be 'meal' or 'rest', got ${describe(b.kind)}`);
-    if (!Number.isInteger(b.minutes) || b.minutes <= 0) throw new TypeError(`breaks[${i}].minutes must be a whole number of minutes above 0`);
-    if (b.onDuty !== undefined && typeof b.onDuty !== 'boolean') throw new TypeError(`breaks[${i}].onDuty must be a boolean`);
-    const m = minutes(`breaks[${i}].start`, b.start);
-    const seg = segments.find((sg) => [m, m + DAY].some((w) => w >= sg.ws && w < sg.we));
-    if (!seg) throw new TypeError(`breaks[${i}] must start inside a work segment`);
-    const w = m >= seg.ws ? m : m + DAY;
-    const start = toReal(w, seg.s, `breaks[${i}].start`);
-    if (start + b.minutes > seg.e) throw new TypeError(`breaks[${i}] must end inside its work segment`);
-    pauses.push({ kind: b.kind, start, minutes: b.minutes, onDuty: b.onDuty === true, index: i });
-  });
+  pauses.push(...readBreaks(input.breaks, segments, moments, origin));
   pauses.sort((a, b) => a.start - b.start);
   for (let i = 1; i < pauses.length; i++) {
     if (pauses[i].start < pauses[i - 1].start + pauses[i - 1].minutes) throw new TypeError('breaks must not overlap');
@@ -126,49 +179,31 @@ function readWorkday(input) {
   const span = segments[segments.length - 1].e;
 
   const wallClock = tz
-    ? (t) => clock(((wallAt(epoch0 + t * MINUTE, tz) % (DAY * MINUTE)) + DAY * MINUTE) % (DAY * MINUTE) / MINUTE)
-    : (t) => clock(walls[0][0] + t);
+    ? (t) => clock((((wallAt((origin + t) * MINUTE, tz) / MINUTE) % DAY) + DAY) % DAY)
+    : (t) => clock(startWall + t);
+  // A daily window's bound as real minutes; a bound that falls in a
+  // spring-forward gap moves to the end of the gap.
+  const bound = (w) => {
+    if (!tz) return w - origin;
+    for (let step = 0; step <= 120; step += 1) {
+      const list = moments(w + step);
+      if (list.length) return list[0] - origin;
+    }
+    return w - origin;
+  };
   const clockWindow = (a, b) => {
     const end = b <= a ? b + DAY : b;
-    let best = null;
+    /** @type {[number, number] | null} */
+    let fallback = null;
     for (const k of [-DAY, 0, DAY]) {
-      const lo = lenient(a + k); const hi = lenient(end + k);
+      const lo = bound(a + k); const hi = bound(end + k);
       if (lo < span && hi > 0) return [lo, hi];
-      if (!best) best = [lo, hi];
+      if (!fallback) fallback = [lo, hi];
     }
-    return best;
+    return /** @type {[number, number]} */ (fallback);
   };
-  // A daily window's bound as real minutes; a bound in a gap moves past it.
-  function lenient(w) {
-    if (!tz) return w - walls[0][0];
-    const { year, month, day } = parseDate('date', date);
-    const list = instantsOf(date, w, tz);
-    const epoch = list.length ? list[0] : Date.UTC(year, month - 1, day) + w * MINUTE - (wallAt(epoch0, tz) - epoch0);
-    return (epoch - epoch0) / MINUTE;
-  }
 
-  return {
-    date, span, worked: workedAt(span), pauses,
-    startWall: walls[0][0], endWall: walls[walls.length - 1][1],
-    workedAt, wallClock, clockWindow, zoned: Boolean(tz),
-  };
+  return { date, span, worked: workedAt(span), pauses, startWall, endWall, workedAt, wallClock, clockWindow, zoned: Boolean(tz) };
 }
 
-/**
- * The earliest instant, not before `notBefore`, at which the clock reads `w`.
- * @param {string} date
- * @param {number} w
- * @param {string} tz
- * @param {number} notBefore
- * @param {string} what
- * @returns {number}
- */
-function firstInstant(date, w, tz, notBefore, what) {
-  const list = instantsOf(date, w, tz);
-  if (!list.length) throw new TypeError(`${what}: ${clock(w)} does not exist on that day in ${tz} (the clocks go forward)`);
-  const ok = list.find((e) => e >= notBefore);
-  if (ok === undefined) throw new TypeError(`${what}: ${clock(w)} comes before the time before it`);
-  return ok;
-}
-
-module.exports = { readWorkday, KINDS };
+module.exports = { readWorkday };

@@ -1,7 +1,7 @@
 'use strict';
 
-// The engine: how a shift's breaks are placed in hours worked, how a meal rule
-// finds the meal that satisfies it, what a waiver or a fact changes, and how
+// The engine: how a workday's breaks are placed in hours worked, how meals are
+// matched to the rules that need them, what a waiver or a fact changes, and how
 // rest breaks are counted. Each state is pinned in states.test.js.
 
 const test = require('node:test');
@@ -64,8 +64,15 @@ test('a waiver counts only within the rule\'s own limits', () => {
   assert.deepEqual(rules(seven), ['meal_missing']);
   assert.deepEqual(seven.waivers, [{ ruleId: 'meal', allowed: false }]);
   // The second meal: only if the day is no more than 12 hours and the first was not waived.
+  // Both waived on an 11-hour day: the first waiver does not count (over 6 hours), so the
+  // second may be waived (the first was not, in law), and only the first meal is missing.
   const both = check('US-CA', '07:00', '18:30', [rest('09:00'), rest('13:00'), rest('16:00')], { waived: ['meal', 'second_meal'] });
-  assert.deepEqual(rules(both), ['meal_missing', 'meal_missing']);
+  assert.deepEqual(rules(both), ['meal_missing']);
+  assert.deepEqual(both.waivers, [{ ruleId: 'meal', allowed: false }, { ruleId: 'second_meal', allowed: true }]);
+  // A first meal validly waived on a short day blocks a second waiver; a 6-hour day has no second meal anyway,
+  // so check the rule directly: with the first meal taken, a valid second waiver stands.
+  const taken = check('US-CA', '07:00', '18:30', [meal('11:00'), rest('09:00'), rest('13:00'), rest('16:00')], { waived: ['second_meal'] });
+  assert.deepEqual(rules(taken), []);
   // Massachusetts has no waiver at all.
   assert.deepEqual(rules(check('US-MA', '09:00', '16:00', [], { waived: ['meal'] })), ['meal_missing']);
 });
@@ -96,7 +103,7 @@ test('what a missed break costs', () => {
   const ca = check('US-CA', '09:00', '17:30', [meal('15:00'), rest('11:00')]);
   assert.deepEqual(ca.owed.map((o) => [o.kind, o.for, o.hours]), [['premium_pay', 'meal', 1], ['premium_pay', 'rest', 1]]);
   const co = check('US-CO', '09:00', '17:30', [meal('12:00')]);
-  assert.deepEqual(co.owed.map((o) => [o.kind, o.minutes]), [['rest_time_pay', 20]]);
+  assert.deepEqual(co.owed.map((o) => [o.kind, o.minutes]), [['break_time_pay', 20]]);
   assert.deepEqual(check('US-MA', '09:00', '16:00').owed, []);
 });
 
@@ -107,10 +114,17 @@ test('a place the tables do not cover answers unknown', () => {
   assert.deepEqual(r.violations, []);
 });
 
-test('a shift before a rule took effect answers unknown', () => {
-  const r = checkWorkday({ jurisdiction: 'US-MN', date: '2025-12-31', start: '09:00', end: '17:00' });
-  assert.equal(r.known, false);
-  assert.equal(r.reason, 'no_rule_in_force');
+test('a day is checked against the rules in force that day', () => {
+  // Minnesota's 30-minute meal and 15-minute rest began on 2026-01-01; before, its rules had no length to check.
+  const before = checkWorkday({ jurisdiction: 'US-MN', date: '2025-12-31', start: '09:00', end: '17:00' });
+  assert.equal(before.known, true);
+  assert.deepEqual(before.violations, []);
+  assert.ok(before.notes.some((n) => /sufficient time to eat/.test(n.note)));
+  assert.deepEqual(rules(checkWorkday({ jurisdiction: 'US-MN', date: '2026-01-02', start: '09:00', end: '17:00' })), ['meal_missing', 'rest_missing']);
+  // Illinois added its further meals in 2023.
+  const long = (date) => rules(checkWorkday({ jurisdiction: 'US-IL', date, start: '06:00', end: '19:20', breaks: [meal('10:00', 20)] }));
+  assert.deepEqual(long('2022-12-30'), []);
+  assert.deepEqual(long('2023-01-02'), ['meal_missing']);
 });
 
 test('a state with no adult rule answers known, with nothing owed', () => {
@@ -193,4 +207,70 @@ test('jurisdictions', () => {
 test('the tables are frozen', () => {
   assert.ok(Object.isFrozen(rulesFor('US-CA').meals[0].window));
   assert.throws(() => { 'use strict'; rulesFor('US-CA').meals[0].minutes = 10; }, TypeError);
+});
+
+// Code review, 2026-10-11.
+
+test('a typo inside a break or a segment throws, it does not change the answer', () => {
+  assert.throws(() => check('US-MA', '09:00', '16:30', [{ start: '12:00', minutes: 30, kind: 'meal', onduty: true }]), /unknown key/);
+  assert.throws(() => checkWorkday({ jurisdiction: 'US-CA', date: DATE, segments: [{ start: '09:00', End: '13:00' }] }), /unknown key/);
+});
+
+test('meals are matched to rules as a whole, not first come first served', () => {
+  // New York, 06:30-15:30: the noonday meal (30, within 11-2). A 45-minute meal at 11:00 fits it,
+  // and so does a 30 at 13:00; either way the day passes.
+  assert.deepEqual(rules(check('US-NY', '06:30', '15:30', [meal('11:00', 45), meal('13:00', 30)])), []);
+  // California 07:00-19:30, meals at 13:00 (6 h worked) and 18:00: only the first meal is late.
+  const ca = check('US-CA', '07:00', '19:30', [meal('13:00'), meal('18:00'), rest('09:00'), rest('15:00'), rest('17:00')]);
+  assert.deepEqual(ca.violations.map((v) => [v.rule, v.ruleId]), [['meal_too_late', 'meal']]);
+  // A one-minute gap between punches is not blamed for a missing meal.
+  const gap = checkWorkday({ jurisdiction: 'US-CA', date: DATE, segments: [{ start: '09:00', end: '10:00' }, { start: '10:01', end: '17:30' }], breaks: [meal('14:30'), rest('11:00'), rest('15:30')] });
+  assert.deepEqual(gap.violations.map((v) => v.rule), ['meal_too_late']);
+});
+
+test('every meal a long day earns is required', () => {
+  const day = (j, segs, breaks) => rules(checkWorkday({ jurisdiction: j, date: DATE, segments: segs, breaks }));
+  // Oregon: three meals from 22 hours.
+  assert.deepEqual(day('US-OR', [{ start: '00:00', end: '23:00' }], [meal('03:30'), meal('12:00'), rest('01:30'), rest('06:00'), rest('09:00'), rest('14:00'), rest('17:00'), rest('20:00')]), ['meal_missing']);
+  // Illinois: a fourth 20-minute meal at 21 hours.
+  assert.deepEqual(day('US-IL', [{ start: '00:00', end: '22:00' }], [meal('04:00', 20), meal('09:00', 20), meal('14:00', 20)]), ['meal_missing']);
+});
+
+test('New York: the noonday and night meals are alternatives by start time', () => {
+  // A 05:00 start takes the night meal (45), not also the noonday one.
+  assert.deepEqual(rules(check('US-NY', '05:00', '12:00', [meal('08:15', 45)])), []);
+  // 07:00-14:00 spans all of 11-2: the noonday meal applies.
+  assert.deepEqual(rules(check('US-NY', '07:00', '14:00')), ['meal_missing']);
+  // 05:30-11:45 starts in the night window: 45 minutes, and no noonday meal on top.
+  assert.deepEqual(rules(check('US-NY', '05:30', '11:45', [meal('08:30', 45)])), []);
+});
+
+test('the repeated hour when the clocks go back, and the 24-hour bound in real time', () => {
+  // Los Angeles, 2026-11-01: clocked in 01:30 (first 01:30), out at 01:15 (after the change): 45 minutes.
+  const r = checkWorkday({ jurisdiction: 'US-TX', date: '2026-11-01', start: '01:30', end: '01:15', timeZone: 'America/Los_Angeles' });
+  assert.equal(r.workedMinutes, 45);
+  // Without a zone the same times read as almost a full day.
+  assert.equal(checkWorkday({ jurisdiction: 'US-TX', date: '2026-11-01', start: '01:30', end: '01:15' }).workedMinutes, 1425);
+  // A day longer than 24 real hours is refused.
+  assert.throws(() => checkWorkday({ jurisdiction: 'US-TX', date: '2026-10-31', segments: [{ start: '01:30', end: '23:00' }, { start: '23:30', end: '01:40' }], timeZone: 'America/Los_Angeles' }), /24 hours/);
+});
+
+test('waiving a rest break where there is no rest rule throws', () => {
+  assert.throws(() => check('US-MA', '09:00', '17:00', [meal('12:00')], { waived: ['rest'] }), /not a rule in US-MA/);
+});
+
+test('Minnesota owes missed break time twice over, for meals and rests', () => {
+  const r = checkWorkday({ jurisdiction: 'US-MN', date: DATE, start: '09:00', end: '15:00', breaks: [rest('10:00', 15), rest('13:00', 15)] });
+  assert.deepEqual(r.owed.map((o) => [o.kind, o.for, o.minutes]), [['break_time_pay', 'meal', 60]]);
+});
+
+test('assumptions and notes only for rules that applied', () => {
+  // North Dakota's meal rule is not triggered by a 2-hour shift: nothing assumed about who is on duty.
+  assert.deepEqual(check('US-ND', '09:00', '11:00').assumptions, ['wall_clock']);
+  // A Maryland restaurant is outside the retail rule: no rest note, no headcount assumed.
+  const md = check('US-MD', '09:00', '13:00', [rest('11:00', 15)], { facts: { industry: 'restaurant' } });
+  assert.deepEqual(md.notes, []);
+  assert.deepEqual(md.assumptions, ['wall_clock']);
+  // A short meal under a "no more than N hours without" rule is reported as short.
+  assert.deepEqual(rules(check('US-NH', '09:00', '15:00', [meal('12:00', 20)])), ['meal_too_short']);
 });

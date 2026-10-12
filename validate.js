@@ -20,6 +20,7 @@ function validateEntry(code, e) {
   const fail = (what) => { throw new Error(`work-break-rules: ${code}: ${what}`); };
   const obj = (o, what) => { if (!o || typeof o !== 'object' || Array.isArray(o)) fail(`${what} must be an object`); };
   const keys = (o, allowed, what) => { obj(o, what); for (const k of Object.keys(o)) if (!allowed.includes(k)) fail(`${what} has unknown key ${k}`); };
+  const has = (o, required, what) => { for (const k of required) if (!(k in o)) fail(`${what} is missing ${k}`); };
   const isTime = (t) => typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
   const window2 = (w, what) => { if (!(Array.isArray(w) && w.length === 2 && w.every(isTime))) fail(`${what} must be ['HH:MM', 'HH:MM']`); };
   const hours = (h, what) => { if (typeof h !== 'number' || !(h > 0)) fail(`${what} must be a positive number of hours`); };
@@ -55,6 +56,7 @@ function validateEntry(code, e) {
   };
 
   keys(e, ['effectiveFrom', 'meals', 'rest', 'penalty', 'unchecked', 'basis'], 'entry');
+  has(e, ['effectiveFrom', 'meals', 'rest', 'penalty', 'unchecked', 'basis'], 'entry');
   if (e.effectiveFrom !== null) parseDate(`${code}.effectiveFrom`, e.effectiveFrom);
   if (!Array.isArray(e.meals) || !Array.isArray(e.unchecked)) fail('meals and unchecked must be arrays');
   if ((e.meals.length || e.rest) && e.basis) fail('basis is for an entry with no rule');
@@ -63,7 +65,13 @@ function validateEntry(code, e) {
 
   e.meals.forEach((m, i) => {
     const what = `meals[${i}] (${m && m.id})`;
-    keys(m, ['id', 'trigger', 'minutes', 'window', 'waiver', 'onDutyAllowed', 'appliesWhen', 'citations', 'confidence', 'note'], what);
+    keys(m, ['id', 'trigger', 'minutes', 'repeat', 'window', 'waiver', 'onDutyAllowed', 'appliesWhen', 'citations', 'confidence', 'note'], what);
+    has(m, ['id', 'trigger', 'minutes', 'window', 'waiver', 'onDutyAllowed', 'appliesWhen', 'citations', 'confidence', 'note'], what);
+    if (m.repeat !== undefined) {
+      keys(m.repeat, ['everyHours'], `${what}.repeat`);
+      hours(m.repeat.everyHours, `${what}.repeat.everyHours`);
+      if (!m.trigger.minWorked) fail(`${what}.repeat counts from trigger.minWorked, which it needs`);
+    }
     if (typeof m.id !== 'string' || !/^[a-z0-9_]+$/.test(m.id) || m.id === 'rest') fail(`${what}.id must be snake_case and not 'rest'`);
     const t = m.trigger;
     keys(t, ['minWorked', 'maxWorked', 'minSpan', 'overlapsClock', 'startsBetweenClock', 'startsBefore', 'endsAfter'], `${what}.trigger`);
@@ -91,11 +99,13 @@ function validateEntry(code, e) {
   const r = e.rest;
   if (r !== null) {
     keys(r, ['minutes', 'perHours', 'majorFraction', 'minimumShiftHours', 'table', 'maxStretch', 'paid', 'waiver', 'appliesWhen', 'citations', 'confidence', 'note'], 'rest');
+    has(r, ['minutes', 'perHours', 'majorFraction', 'minimumShiftHours', 'table', 'maxStretch', 'paid', 'waiver', 'appliesWhen', 'citations', 'confidence', 'note'], 'rest');
     if (!Number.isInteger(r.minutes) || r.minutes <= 0) fail('rest.minutes');
     if (r.table !== null) {
       if (r.perHours !== null || r.minimumShiftHours !== null) fail('rest: a table replaces perHours and minimumShiftHours');
       if (!Array.isArray(r.table) || !r.table.length) fail('rest.table');
       for (const row of r.table) if (!(Array.isArray(row) && row.length === 3 && row[0] > 0 && AT_LEAST.includes(row[1]) && Number.isInteger(row[2]) && row[2] >= 0)) fail('rest.table rows are [hours, op, count]');
+      for (let i = 1; i < r.table.length; i++) if (!(r.table[i][0] > r.table[i - 1][0])) fail('rest.table rows must be in ascending hours');
     } else {
       hours(r.perHours, 'rest.perHours');
       if (r.minimumShiftHours !== null) hours(r.minimumShiftHours, 'rest.minimumShiftHours');
@@ -110,10 +120,15 @@ function validateEntry(code, e) {
 
   const p = e.penalty;
   if (p !== null) {
-    keys(p, ['premiumHours', 'missedRestPaid', 'description', 'citations'], 'penalty');
+    keys(p, ['premiumHours', 'breakTimePaid', 'description', 'citations'], 'penalty');
+    has(p, ['premiumHours', 'breakTimePaid', 'description', 'citations'], 'penalty');
     if (p.premiumHours !== null) { keys(p.premiumHours, ['meal', 'rest'], 'penalty.premiumHours'); if (!(p.premiumHours.meal > 0 && p.premiumHours.rest > 0)) fail('penalty.premiumHours'); }
-    if (typeof p.missedRestPaid !== 'boolean' || typeof p.description !== 'string' || !p.description) fail('penalty');
-    if (p.missedRestPaid && !r) fail('penalty.missedRestPaid needs a rest rule');
+    if (p.breakTimePaid !== null) {
+      keys(p.breakTimePaid, ['meal', 'rest', 'multiplier'], 'penalty.breakTimePaid');
+      if (typeof p.breakTimePaid.meal !== 'boolean' || typeof p.breakTimePaid.rest !== 'boolean' || !(p.breakTimePaid.multiplier >= 1)) fail('penalty.breakTimePaid');
+      if (p.breakTimePaid.rest && !r) fail('penalty.breakTimePaid.rest needs a rest rule');
+    }
+    if (typeof p.description !== 'string' || !p.description) fail('penalty.description');
     sourced(p, 'penalty');
   }
   for (const u of e.unchecked) if (typeof u !== 'string' || !u) fail('unchecked holds sentences');
@@ -128,4 +143,21 @@ function validateEntry(code, e) {
   function keysOk(o, allowed, what) { keys(o, allowed, what); return o; }
 }
 
-module.exports = { validateEntry, INDUSTRIES };
+/**
+ * Refuse a malformed jurisdiction: one entry, or versions oldest first, each
+ * after an effectiveFrom (only the first may have none).
+ * @param {string} code
+ * @param {any} value
+ */
+function validateJurisdiction(code, value) {
+  const versions = Array.isArray(value) ? value : [value];
+  if (!versions.length) throw new Error(`work-break-rules: ${code}: no versions`);
+  versions.forEach((v, i) => {
+    validateEntry(code, v);
+    if (i > 0 && !(v.effectiveFrom && (!versions[i - 1].effectiveFrom || v.effectiveFrom > versions[i - 1].effectiveFrom))) {
+      throw new Error(`work-break-rules: ${code}: versions must have increasing effectiveFrom dates`);
+    }
+  });
+}
+
+module.exports = { validateJurisdiction, validateEntry, INDUSTRIES };

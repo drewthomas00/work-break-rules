@@ -85,7 +85,7 @@ const JURISDICTIONS = {
     },
     penalty: {
       premiumHours: { meal: 1, rest: 1 },
-      missedRestPaid: false,
+      breakTimePaid: null,
       description: 'One additional hour of pay at the regular rate of compensation for each workday a compliant meal period is not provided, and one for each workday a compliant rest period is not provided: at most one of each per day.',
       citations: [
         { citation: 'IWC Wage Order 2-2001, §§ 11(D), 12(B)', sourceUrl: CA_WO2 },
@@ -120,7 +120,7 @@ const JURISDICTIONS = {
     },
     penalty: {
       premiumHours: null,
-      missedRestPaid: true,
+      breakTimePaid: { meal: false, rest: true, multiplier: 1 },
       description: 'A missed rest period extends the shift by 10 minutes, owed as wages. A missed or interrupted meal is time worked, and paid; there is no premium.',
       citations: [{ citation: 'COMPS Order #40, Rules 5.1, 5.2.4', sourceUrl: CO_COMPS }],
     },
@@ -128,36 +128,67 @@ const JURISDICTIONS = {
     basis: null,
   },
 
-  'US-IL': {
-    effectiveFrom: '2023-01-01',
-    meals: [
-      {
-        id: 'meal',
-        trigger: { minWorked: { hours: 7.5, op: '>=' } },
-        minutes: 20,
-        window: { startByWorkedHours: 5 },
-        waiver: null,
-        onDutyAllowed: false,
-        appliesWhen: null,
-        citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }],
-        confidence: 'high',
-        note: 'A shift of 7½ continuous hours needs a meal of at least 20 minutes beginning no later than 5 hours after the start, and another 20 minutes for every further 4½ continuous hours. Reasonable restroom time does not count toward it. Silent on pay: a 20-minute meal is unpaid under federal law only if it meets 29 CFR 785.19. The ILGA site\'s file mirror is linked because ilga.gov blocks automated reading. Effective date is that of P.A. 102-828, which added the further meals.',
-      },
-      { id: 'second_meal', trigger: { minWorked: { hours: 12, op: '>=' } }, minutes: 20, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
-        citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }], confidence: 'high', note: 'The additional 20 minutes after a further 4½ continuous hours (12 in all).' },
-      { id: 'third_meal', trigger: { minWorked: { hours: 16.5, op: '>=' } }, minutes: 20, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
-        citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }], confidence: 'high', note: 'The additional 20 minutes after another 4½ continuous hours (16½ in all).' },
-    ],
-    rest: null,
-    penalty: {
-      premiumHours: null, missedRestPaid: false,
-      description: 'A civil penalty of up to $250 plus up to $250 in damages to the employee per offense (fewer than 25 employees), or $500 plus $500 (25 or more); each day without a required meal is a separate offense.',
-      citations: [{ citation: '820 ILCS 140/7', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K7.html' }],
+  'US-IL': [
+    {
+      effectiveFrom: null,
+      meals: [
+        {
+          id: 'meal',
+          trigger: { minWorked: { hours: 7.5, op: '>=' } },
+          minutes: 20,
+          window: { startByWorkedHours: 5 },
+          waiver: null,
+          onDutyAllowed: false,
+          appliesWhen: null,
+          citations: [{ citation: '820 ILCS 140/3 (before P.A. 102-828)', sourceUrl: 'https://ilga.gov/legislation/publicacts/fulltext.asp?Name=102-0828' }],
+          confidence: 'medium',
+          note: 'Before 2023-01-01: one meal of at least 20 minutes for 7½ continuous hours, beginning no later than 5 hours after the start; P.A. 102-828 added the further meals. Read as the amending act shows the earlier text.',
+        },
+      ],
+      rest: null,
+      penalty: null,
+      unchecked: [],
+      basis: null,
     },
-    unchecked: [],
-    basis: null,
-  },
-
+    {
+      effectiveFrom: '2023-01-01',
+      meals: [
+        {
+          id: 'meal',
+          trigger: { minWorked: { hours: 7.5, op: '>=' } },
+          minutes: 20,
+          window: { startByWorkedHours: 5 },
+          waiver: null,
+          onDutyAllowed: false,
+          appliesWhen: null,
+          citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }],
+          confidence: 'high',
+          note: 'A shift of 7½ continuous hours needs a meal of at least 20 minutes beginning no later than 5 hours after the start, and another 20 minutes for every further 4½ continuous hours. Reasonable restroom time does not count toward it. Silent on pay: a 20-minute meal is unpaid under federal law only if it meets 29 CFR 785.19. The ILGA site\'s file mirror is linked because ilga.gov blocks automated reading. Effective date is that of P.A. 102-828, which added the further meals.',
+        },
+        {
+          id: 'additional_meals',
+          trigger: { minWorked: { hours: 12, op: '>=' } },
+          minutes: 20,
+          repeat: { everyHours: 4.5 },
+          window: null,
+          waiver: null,
+          onDutyAllowed: false,
+          appliesWhen: null,
+          citations: [{ citation: '820 ILCS 140/3', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K3.html' }],
+          confidence: 'high',
+          note: 'Another 20 minutes for every further 4½ continuous hours: a second meal at 12 hours, a third at 16½, a fourth at 21. When each is taken is not checked.',
+        },
+      ],
+      rest: null,
+      penalty: {
+        premiumHours: null, breakTimePaid: null,
+        description: 'A civil penalty of up to $250 plus up to $250 in damages to the employee per offense (fewer than 25 employees), or $500 plus $500 (25 or more); each day without a required meal is a separate offense.',
+        citations: [{ citation: '820 ILCS 140/7', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K7.html' }],
+      },
+      unchecked: [],
+      basis: null,
+    },
+  ],
   'US-KY': {
     effectiveFrom: null,
     meals: [
@@ -184,7 +215,7 @@ const JURISDICTIONS = {
       note: 'A paid 10-minute rest during each 4 hours worked, in addition to lunch. No major-fraction rule. A collective bargaining agreement giving at least as much rest time may replace it (since 2020-03-27).',
     },
     penalty: {
-      premiumHours: null, missedRestPaid: false,
+      premiumHours: null, breakTimePaid: null,
       description: 'A civil penalty of $100 to $1,000 per violation of the rest-period statute, payable to the state. None is set for the lunch statute.',
       citations: [{ citation: 'KRS 337.990(10)', sourceUrl: 'https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=52428' }],
     },
@@ -218,7 +249,7 @@ const JURISDICTIONS = {
       note: '4 to 6 consecutive hours: one 15-minute break, which may be waived in writing. More than 6: the 30-minute break instead. From 8 consecutive hours, an additional 15 minutes for every additional 4 consecutive hours (one from 8, encoded as stricter; the Department counts from the previous break). The statute is silent on pay; a break of 15 minutes is paid under 29 CFR 785.18.',
     },
     penalty: {
-      premiumHours: null, missedRestPaid: false,
+      premiumHours: null, breakTimePaid: null,
       description: 'Up to $300 per employee not in compliance ($600 within 3 years of a prior violation); after an order is ignored, the employee may recover 3 times the hourly wage for each later violation.',
       citations: [{ citation: 'Md. Code, Lab. & Empl. § 3-710(d)', sourceUrl: MD_ARTICLE }],
     },
@@ -226,43 +257,59 @@ const JURISDICTIONS = {
     basis: null,
   },
 
-  'US-MN': {
-    effectiveFrom: '2026-01-01',
-    meals: [
-      {
-        id: 'meal',
-        trigger: { minWorked: { hours: 6, op: '>=' } },
-        minutes: 30,
-        window: null,
-        waiver: null,
-        onDutyAllowed: false,
-        appliesWhen: null,
-        citations: [{ citation: 'Minn. Stat. § 177.254, subd. 1', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.254' }],
+  'US-MN': [
+    {
+      effectiveFrom: null,
+      meals: [],
+      rest: null,
+      penalty: null,
+      unchecked: [
+        'Before 2026-01-01, Minnesota required "sufficient time to eat a meal" for 8 or more consecutive hours (Minn. Stat. § 177.254), with no length a schedule can be checked against.',
+        'Before 2026-01-01, Minnesota required "adequate time" within each 4 consecutive hours to use the nearest convenient restroom (Minn. Stat. § 177.253), with no length a schedule can be checked against.',
+      ],
+      basis: {
+        citations: [{ citation: 'Laws 2025, 1st Sp. Sess. ch. 6, art. 5 (amending Minn. Stat. §§ 177.253, 177.254)', sourceUrl: 'https://www.revisor.mn.gov/laws/2025/1/Session+Law/Chapter/6/' }],
         confidence: 'high',
-        note: 'Since 2026-01-01 (Laws 2025, 1st Sp. Sess. ch. 6, art. 5): 6 or more consecutive hours needs a meal break of at least 30 minutes; unpaid only if the employee is completely relieved (Minn. R. 5200.0120, subp. 4). One meal however long the shift. Before 2026 the rule was "sufficient time to eat" at 8 hours, which these tables do not hold: a shift before 2026-01-01 answers unknown. A collective bargaining agreement may differ.',
+        note: 'The amending law shows the earlier text: "sufficient time to eat a meal" at 8 consecutive hours, and "adequate time" for the restroom within each 4 consecutive hours.',
       },
-    ],
-    rest: {
-      minutes: 15, perHours: 4, majorFraction: false, minimumShiftHours: 4, table: null, maxStretch: { hours: 4, op: '<' }, paid: true, waiver: null, appliesWhen: null,
-      citations: [
-        { citation: 'Minn. Stat. § 177.253, subd. 1', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.253' },
-        { citation: 'Minn. R. 5200.0120, subp. 1', sourceUrl: 'https://www.revisor.mn.gov/rules/5200.0120/' },
-      ],
-      confidence: 'high',
-      note: 'At least 15 minutes, or enough time to reach the nearest convenient restroom if longer, within each 4 consecutive hours of work: no 4-hour stretch may pass without one (the Department: a break offered only after 4 hours does not meet it). Paid: a rest under 20 minutes may not be deducted. A meal does not reset the 4 hours here (stricter).',
     },
-    penalty: {
-      premiumHours: null, missedRestPaid: true,
-      description: 'Since 2026-01-01, the break time that should have been allowed, at the regular rate, plus an equal amount as liquidated damages (for a missed meal or rest).',
-      citations: [
-        { citation: 'Minn. Stat. § 177.253, subd. 3', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.253' },
-        { citation: 'Minn. Stat. § 177.254, subd. 4', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.254' },
+    {
+      effectiveFrom: '2026-01-01',
+      meals: [
+        {
+          id: 'meal',
+          trigger: { minWorked: { hours: 6, op: '>=' } },
+          minutes: 30,
+          window: null,
+          waiver: null,
+          onDutyAllowed: false,
+          appliesWhen: null,
+          citations: [{ citation: 'Minn. Stat. § 177.254, subd. 1', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.254' }],
+          confidence: 'high',
+          note: 'Since 2026-01-01 (Laws 2025, 1st Sp. Sess. ch. 6, art. 5): 6 or more consecutive hours needs a meal break of at least 30 minutes; unpaid only if the employee is completely relieved (Minn. R. 5200.0120, subp. 4). One meal however long the shift. Before 2026 the rule was "sufficient time to eat" at 8 hours (the earlier version, which has nothing a schedule can be checked against). A collective bargaining agreement may differ.',
+        },
       ],
+      rest: {
+        minutes: 15, perHours: 4, majorFraction: false, minimumShiftHours: 4, table: null, maxStretch: { hours: 4, op: '<' }, paid: true, waiver: null, appliesWhen: null,
+        citations: [
+          { citation: 'Minn. Stat. § 177.253, subd. 1', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.253' },
+          { citation: 'Minn. R. 5200.0120, subp. 1', sourceUrl: 'https://www.revisor.mn.gov/rules/5200.0120/' },
+        ],
+        confidence: 'high',
+        note: 'At least 15 minutes, or enough time to reach the nearest convenient restroom if longer, within each 4 consecutive hours of work: no 4-hour stretch may pass without one (the Department: a break offered only after 4 hours does not meet it). Paid: a rest under 20 minutes may not be deducted. A meal does not reset the 4 hours here (stricter).',
+      },
+      penalty: {
+        premiumHours: null, breakTimePaid: { meal: true, rest: true, multiplier: 2 },
+        description: 'Since 2026-01-01, the break time that should have been allowed, at the regular rate, plus an equal amount as liquidated damages (for a missed meal or rest).',
+        citations: [
+          { citation: 'Minn. Stat. § 177.253, subd. 3', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.253' },
+          { citation: 'Minn. Stat. § 177.254, subd. 4', sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/177.254' },
+        ],
+      },
+      unchecked: [],
+      basis: null,
     },
-    unchecked: [],
-    basis: null,
-  },
-
+  ],
   'US-NV': {
     effectiveFrom: null,
     meals: [
@@ -293,7 +340,7 @@ const JURISDICTIONS = {
       note: 'A paid 10-minute rest per 4 hours or major fraction, none under 3½ hours. The regulation\'s schedule gives one for 3½ to under 7 hours, two for 7 to under 11, three for 11 to under 15; the statute\'s "major fraction" gives two from just over 6 hours, and is encoded (stricter). The employee may voluntarily forgo a rest.',
     },
     penalty: {
-      premiumHours: null, missedRestPaid: false,
+      premiumHours: null, breakTimePaid: null,
       description: 'A misdemeanor, and an administrative penalty of up to $5,000 per violation.',
       citations: [{ citation: 'NRS 608.195', sourceUrl: 'https://www.leg.state.nv.us/NRS/NRS-608.html#NRS608Sec195' }],
     },
@@ -328,8 +375,19 @@ const JURISDICTIONS = {
         confidence: 'high',
         note: 'A work period of more than 7 hours: after the end of the 3rd hour worked, completed before the 6th hour begins.',
       },
-      { id: 'second_meal', trigger: { minWorked: { hours: 14, op: '>=' } }, minutes: 30, window: null, waiver: null, onDutyAllowed: false, appliesWhen: null,
-        citations: [{ citation: 'OAR 839-020-0050, Appendix A', sourceUrl: OR_RULE }], confidence: 'high', note: 'Appendix A: two meals from 14 hours, three from 22.' },
+      {
+        id: 'additional_meals',
+        trigger: { minWorked: { hours: 14, op: '>=' } },
+        minutes: 30,
+        repeat: { everyHours: 8 },
+        window: null,
+        waiver: null,
+        onDutyAllowed: false,
+        appliesWhen: null,
+        citations: [{ citation: 'OAR 839-020-0050, Appendix A', sourceUrl: OR_RULE }],
+        confidence: 'high',
+        note: 'Appendix A: two meals from 14 hours, three from 22. When the further meals are taken is not checked.',
+      },
     ],
     rest: {
       minutes: 10, perHours: 4, majorFraction: true, minimumShiftHours: null, table: null, maxStretch: null, paid: true, waiver: null, appliesWhen: null,
@@ -338,7 +396,7 @@ const JURISDICTIONS = {
       note: 'A paid, relieved 10-minute rest for each 4-hour segment or major part (more than 2 hours), approximately mid-segment, separate from the meal and not at the start or end of the shift (not checked). It cannot be waived. Not required only for an adult working alone, under 5 hours in any 16, in a retail or service establishment, free to leave to use the restroom (not encoded).',
     },
     penalty: {
-      premiumHours: null, missedRestPaid: false,
+      premiumHours: null, breakTimePaid: null,
       description: 'No premium. Unprovided rest time and unrelieved meals are owed as wages; BOLI may assess a civil penalty of up to $1,000 for a willful violation, and up to $2,000 for coercing a server into waiving a meal.',
       citations: [
         { citation: 'ORS 653.256(1)', sourceUrl: 'https://www.oregonlegislature.gov/bills_laws/ors/ors653.html' },
@@ -406,7 +464,7 @@ const JURISDICTIONS = {
       note: 'A paid 10-minute rest for each 4 hours of working time, as near the midpoint as possible, and no more than 3 hours without one (so a shift of more than 3 hours needs one, a reading from the 3-hour rule). It cannot be waived. Intermittent rest counts only where the work allows it, not for work requiring constant exertion (Pellino v. Brink\'s); brief restroom or food stops do not.',
     },
     penalty: {
-      premiumHours: null, missedRestPaid: true,
+      premiumHours: null, breakTimePaid: { meal: false, rest: true, multiplier: 1 },
       description: 'No statutory premium. Washington courts treat a missed rest break as 10 more minutes worked, owed as wages; a missed meal is recoverable as wages; willfully withheld wages can be doubled (RCW 49.52.070).',
       citations: [
         { citation: 'Wash. State Nurses Ass\'n v. Sacred Heart Med. Ctr., 175 Wn.2d 822 (2012)', sourceUrl: 'https://law.justia.com/cases/washington/supreme-court/2012/85524-9.html' },
@@ -455,7 +513,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A civil penalty of $300 per violation.', citations: [{ citation: 'Conn. Gen. Stat. §§ 31-51ii(g), 31-69a(a)', sourceUrl: 'https://www.cga.ct.gov/current/pub/chap_558.htm#sec_31-69a' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A civil penalty of $300 per violation.', citations: [{ citation: 'Conn. Gen. Stat. §§ 31-51ii(g), 31-69a(a)', sourceUrl: 'https://www.cga.ct.gov/current/pub/chap_558.htm#sec_31-69a' }] },
     unchecked: [],
     basis: null,
   },
@@ -477,7 +535,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A civil penalty of $1,000 to $5,000 per violation.', citations: [{ citation: '19 Del. C. § 707(c)', sourceUrl: 'https://delcode.delaware.gov/title19/c007/sc01/index.html' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A civil penalty of $1,000 to $5,000 per violation.', citations: [{ citation: '19 Del. C. § 707(c)', sourceUrl: 'https://delcode.delaware.gov/title19/c007/sc01/index.html' }] },
     unchecked: [],
     basis: null,
   },
@@ -502,7 +560,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A fine of $300 to $600.', citations: [{ citation: 'Mass. Gen. Laws c. 149, § 100', sourceUrl: 'https://malegislature.gov/Laws/GeneralLaws/PartI/TitleXXI/Chapter149/Section100' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A fine of $300 to $600.', citations: [{ citation: 'Mass. Gen. Laws c. 149, § 100', sourceUrl: 'https://malegislature.gov/Laws/GeneralLaws/PartI/TitleXXI/Chapter149/Section100' }] },
     unchecked: [],
     basis: null,
   },
@@ -524,7 +582,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A forfeiture of $100 to $500 per violation.', citations: [{ citation: '26 M.R.S. § 602', sourceUrl: 'https://legislature.maine.gov/statutes/26/title26sec602.html' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A forfeiture of $100 to $500 per violation.', citations: [{ citation: '26 M.R.S. § 602', sourceUrl: 'https://legislature.maine.gov/statutes/26/title26sec602.html' }] },
     unchecked: [],
     basis: null,
   },
@@ -571,7 +629,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A Class III misdemeanor.', citations: [{ citation: 'Neb. Rev. Stat. § 48-213', sourceUrl: 'https://nebraskalegislature.gov/laws/statutes.php?statute=48-213' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A Class III misdemeanor.', citations: [{ citation: 'Neb. Rev. Stat. § 48-213', sourceUrl: 'https://nebraskalegislature.gov/laws/statutes.php?statute=48-213' }] },
     unchecked: [],
     basis: null,
   },
@@ -593,7 +651,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A civil penalty of up to $2,500 per violation after a hearing; a first violation gets a written warning and 30 days to cure.', citations: [{ citation: 'RSA 273:11-a', sourceUrl: 'https://gc.nh.gov/rsa/html/XXIII/273/273-11-a.htm' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A civil penalty of up to $2,500 per violation after a hearing; a first violation gets a written warning and 30 days to cure.', citations: [{ citation: 'RSA 273:11-a', sourceUrl: 'https://gc.nh.gov/rsa/html/XXIII/273/273-11-a.htm' }] },
     unchecked: [],
     basis: null,
   },
@@ -603,7 +661,7 @@ const JURISDICTIONS = {
     meals: [
       {
         id: 'noonday_meal',
-        trigger: { minSpan: { hours: 6, op: '>' }, overlapsClock: ['11:00', '14:00'], startsBefore: '13:00' },
+        trigger: { minSpan: { hours: 6, op: '>' }, overlapsClock: ['11:00', '14:00'], startsBetweenClock: ['06:00', '13:00'] },
         minutes: 30,
         window: { clock: ['11:00', '14:00'] },
         waiver: null,
@@ -645,7 +703,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'Civil penalties of up to $1,000 for a first violation, $2,000 for a second and $3,000 for a third or later.', citations: [{ citation: 'N.Y. Lab. Law § 218(1)', sourceUrl: 'https://www.nysenate.gov/legislation/laws/LAB/218' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'Civil penalties of up to $1,000 for a first violation, $2,000 for a second and $3,000 for a third or later.', citations: [{ citation: 'N.Y. Lab. Law § 218(1)', sourceUrl: 'https://www.nysenate.gov/legislation/laws/LAB/218' }] },
     unchecked: ['New York\'s 45-minute meal for a shift starting between 1 p.m. and 6 a.m. must fall midway through the shift; that timing is not checked.'],
     basis: null,
   },
@@ -679,7 +737,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A fine of $500 per offense.', citations: [{ citation: 'R.I. Gen. Laws § 28-3-20', sourceUrl: 'https://webserver.rilegislature.gov/Statutes/TITLE28/28-3/28-3-20.htm' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A fine of $500 per offense.', citations: [{ citation: 'R.I. Gen. Laws § 28-3-20', sourceUrl: 'https://webserver.rilegislature.gov/Statutes/TITLE28/28-3/28-3-20.htm' }] },
     unchecked: [],
     basis: null,
   },
@@ -704,7 +762,7 @@ const JURISDICTIONS = {
       },
     ],
     rest: null,
-    penalty: { premiumHours: null, missedRestPaid: false, description: 'A Class B misdemeanor, and a civil penalty for a willful violation.', citations: [{ citation: 'Tenn. Att\'y Gen. Op. No. 08-187 (2008)', sourceUrl: 'https://www.tn.gov/content/dam/tn/attorneygeneral/documents/ops/2008/op08-187.pdf' }] },
+    penalty: { premiumHours: null, breakTimePaid: null, description: 'A Class B misdemeanor, and a civil penalty for a willful violation.', citations: [{ citation: 'Tenn. Att\'y Gen. Op. No. 08-187 (2008)', sourceUrl: 'https://www.tn.gov/content/dam/tn/attorneygeneral/documents/ops/2008/op08-187.pdf' }] },
     unchecked: [],
     basis: null,
   },
