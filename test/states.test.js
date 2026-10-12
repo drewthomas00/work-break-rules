@@ -38,12 +38,29 @@ test('Connecticut and Delaware: 7½ hours, after the first 2 and before the last
   }
 });
 
+test('Connecticut: no meal is required of a day with 30 paid break minutes in each full 7½ hours', () => {
+  const paid = check('US-CT', '09:00', '17:00', [rest('10:30'), rest('12:30'), rest('14:30')]);
+  assert.deepEqual(rules(paid), []);
+  assert.match(paid.notes.map((n) => n.note).join(' '), /meal rule does not apply/);
+  assert.deepEqual(rules(check('US-CT', '09:00', '17:00', [rest('10:30'), rest('12:30', 19)])), ['meal_missing']);
+  // A paid (on-duty) meal counts as paid time; the off-duty meal rule then has nothing to say.
+  assert.deepEqual(rules(check('US-CT', '09:00', '17:00', [meal('12:00', 30, { onDuty: true })])), []);
+  // Each full 7½ hours needs its own 30: a 15-hour day with all of it in the first half still needs the meal.
+  assert.deepEqual(rules(check('US-CT', '06:00', '21:00', [rest('07:00', 15), rest('09:00', 15)])), ['meal_missing']);
+  assert.deepEqual(rules(check('US-CT', '06:00', '21:00', [rest('07:00', 15), rest('09:00', 15), rest('15:00', 15), rest('18:00', 15)])), []);
+  // Delaware has no such exemption.
+  assert.deepEqual(rules(check('US-DE', '09:00', '17:00', [rest('10:30'), rest('12:30'), rest('14:30')])), ['meal_missing']);
+});
+
 test('Illinois: 20 minutes for 7½ continuous hours, starting within 5 hours; more every 4½', () => {
   assert.deepEqual(rules(check('US-IL', '09:00', '16:29')), []);
   assert.deepEqual(rules(check('US-IL', '09:00', '16:50', [meal('14:00', 20)])), []);
   assert.deepEqual(rules(check('US-IL', '09:00', '16:50', [meal('14:01', 20)])), ['meal_too_late']);
   assert.deepEqual(rules(check('US-IL', '08:00', '20:40', [meal('12:00', 20), meal('17:00', 20)])), []);
   assert.deepEqual(rules(check('US-IL', '08:00', '20:20', [meal('12:00', 20)])), ['meal_missing']);
+  // Hotel room attendants in Cook County cannot be checked; every Illinois answer says so.
+  assert.match(check('US-IL', '09:00', '17:00').notes.map((n) => n.note).join(' '), /Hotel room attendants.*140\/3\.1/);
+  assert.match(checkWorkday({ jurisdiction: 'US-IL', date: '2022-06-01', start: '09:00', end: '12:00' }).notes.map((n) => n.note).join(' '), /Hotel room attendants/);
 });
 
 test('Kentucky: lunch between hour 3 and hour 5 of any shift over 3 hours, and 10 minutes rest per 4 hours', () => {
@@ -169,6 +186,7 @@ test('Washington: meal between hour 2 and 5, every 5 hours; rest every 3 hours',
   const late = check('US-WA', '09:00', '15:00', [meal('12:00'), rest('09:30'), rest('14:30')]);
   assert.deepEqual(rules(late), ['rest_late']);
   assert.deepEqual(late.owed.map((o) => [o.kind, o.minutes]), [['break_time_pay', 10]]);
+  assert.match(late.notes.map((n) => n.note).join(' '), /3 or more hours longer than their normal workday/);
 });
 
 test('West Virginia: 20 minutes for 6 hours; Vermont: a note, nothing checked', () => {

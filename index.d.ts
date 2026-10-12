@@ -70,6 +70,8 @@ export interface MealRule {
   readonly waiver: { readonly maxWorkedHours?: number; readonly requiresNotWaived?: string } | null;
   readonly onDutyAllowed: boolean;
   readonly appliesWhen: AppliesWhen | null;
+  /** the rule does not apply to a day giving at least `minutes` of paid break time (rest breaks and on-duty meals) in each full `perWorkedHours` worked */
+  readonly exemptIfPaidBreaks?: { readonly minutes: number; readonly perWorkedHours: number };
   readonly citations: readonly Citation[];
   readonly confidence: Confidence;
   readonly note: string;

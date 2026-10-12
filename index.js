@@ -268,6 +268,28 @@ function assignMeals(slots, meals, day, counts) {
 }
 
 /**
+ * Does the day give at least `minutes` of paid break time (rest breaks and
+ * on-duty meals) in each full `perWorkedHours` of work? A day shorter than
+ * one period does not qualify; a part period after the last full one is not
+ * counted.
+ * @param {{ minutes: number, perWorkedHours: number }} x
+ * @param {import('./timeline').Workday} day
+ * @returns {boolean}
+ */
+function paidBreaksCover(x, day) {
+  const period = x.perWorkedHours * 60;
+  const periods = Math.floor(day.worked / period);
+  if (!periods) return false;
+  for (let k = 0; k < periods; k++) {
+    const paid = day.pauses
+      .filter((p) => (p.kind === 'rest' || p.onDuty) && p.workedBefore >= k * period && p.workedBefore < (k + 1) * period)
+      .reduce((sum, p) => sum + p.minutes, 0);
+    if (paid < x.minutes) return false;
+  }
+  return true;
+}
+
+/**
  * Check the meal rules.
  * @param {any} entry
  * @param {import('./timeline').Workday} day
@@ -278,6 +300,11 @@ function checkMeals(entry, day, ctx) {
   const slots = [];
   for (const rule of entry.meals) {
     if (!triggered(rule, day) || !covered(rule.appliesWhen, ctx.facts, ctx.assumed)) continue;
+    if (rule.exemptIfPaidBreaks && paidBreaksCover(rule.exemptIfPaidBreaks, day)) {
+      const x = rule.exemptIfPaidBreaks;
+      ctx.note(`The ${rule.id} rule does not apply: the day gives at least ${x.minutes} minutes of paid break time in each ${duration(x.perWorkedHours * 60)} worked.`);
+      continue;
+    }
     if (waivedOk(rule.id, rule.waiver, day, ctx)) continue;
     if (rule.window && rule.window.maxStretch) {
       // "No more than N hours without a meal": every stretch between meals
@@ -434,7 +461,7 @@ function checkWorkday(input) {
   }
 
   const ctx = {
-    facts, waived, assumed: new Set(), allowed: new Set(), waivers: result.waivers, restApplies: false, missedMealMinutes: 0,
+    facts, waived, assumed: new Set(), note: (note) => result.notes.push({ jurisdiction: code, note }), allowed: new Set(), waivers: result.waivers, restApplies: false, missedMealMinutes: 0,
     breach: (rule, kind, fields, message) => result.violations.push({
       rule: kind, ruleId: rule.id || 'rest', ...fields,
       jurisdiction: code, citations: rule.citations, confidence: rule.confidence, note: rule.note, message,

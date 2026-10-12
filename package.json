@@ -1,6 +1,6 @@
 {
   "name": "work-break-rules",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Does this shift give the breaks the law requires? US meal and rest break rules for adult employees — all 50 states and DC, plus federal law — as cited, dated data, with a checker for a planned shift or a day of clock punches: meal thresholds and timing windows, second meals, paid rest breaks, waivers, coverage limits, and California-style premium pay. Unknown places answer unknown, never 'no rule'. Pure functions, zero dependencies.",
   "main": "index.js",
   "types": "index.d.ts",

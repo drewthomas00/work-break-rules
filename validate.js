@@ -65,12 +65,19 @@ function validateEntry(code, e) {
 
   e.meals.forEach((m, i) => {
     const what = `meals[${i}] (${m && m.id})`;
-    keys(m, ['id', 'trigger', 'minutes', 'repeat', 'window', 'waiver', 'onDutyAllowed', 'appliesWhen', 'citations', 'confidence', 'note'], what);
+    keys(m, ['id', 'trigger', 'minutes', 'repeat', 'window', 'waiver', 'onDutyAllowed', 'appliesWhen', 'exemptIfPaidBreaks', 'citations', 'confidence', 'note'], what);
     has(m, ['id', 'trigger', 'minutes', 'window', 'waiver', 'onDutyAllowed', 'appliesWhen', 'citations', 'confidence', 'note'], what);
     if (m.repeat !== undefined) {
       keys(m.repeat, ['everyHours'], `${what}.repeat`);
       hours(m.repeat.everyHours, `${what}.repeat.everyHours`);
       if (!m.trigger.minWorked) fail(`${what}.repeat counts from trigger.minWorked, which it needs`);
+    }
+    if (m.exemptIfPaidBreaks !== undefined) {
+      const x = m.exemptIfPaidBreaks;
+      keys(x, ['minutes', 'perWorkedHours'], `${what}.exemptIfPaidBreaks`);
+      has(x, ['minutes', 'perWorkedHours'], `${what}.exemptIfPaidBreaks`);
+      if (!Number.isInteger(x.minutes) || x.minutes <= 0) fail(`${what}.exemptIfPaidBreaks.minutes`);
+      hours(x.perWorkedHours, `${what}.exemptIfPaidBreaks.perWorkedHours`);
     }
     if (typeof m.id !== 'string' || !/^[a-z0-9_]+$/.test(m.id) || m.id === 'rest') fail(`${what}.id must be snake_case and not 'rest'`);
     const t = m.trigger;

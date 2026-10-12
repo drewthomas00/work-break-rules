@@ -24,6 +24,7 @@ const WA_RULE = 'https://app.leg.wa.gov/wac/default.aspx?cite=296-126-092';
 const WA_POLICY = 'https://www.lni.wa.gov/workers-rights/_docs/esc6.1.pdf';
 const NV_NRS = 'https://www.leg.state.nv.us/NRS/NRS-608.html#NRS608Sec019';
 const NV_NAC = 'https://www.leg.state.nv.us/NAC/NAC-608.html#NAC608Sec145';
+const IL_HOTEL_ATTENDANTS = 'Hotel room attendants in a county of more than 3,000,000 people (Cook County) get two paid 15-minute rest breaks and one 30-minute meal on every workday of at least 7 hours, and may not be made to work during them; a missed day owes 3 times the regular hourly rate (820 ILCS 140/3.1, since 2009-08-11). The tables do not know the role or the county, so this is not checked.';
 const MD_ARTICLE = 'https://mgaleg.maryland.gov/2026RS/Statute_Web/gle/gle.pdf';
 
 /** A jurisdiction with no meal or rest break rule for adults. */
@@ -147,7 +148,7 @@ const JURISDICTIONS = {
       ],
       rest: null,
       penalty: null,
-      unchecked: [],
+      unchecked: [IL_HOTEL_ATTENDANTS],
       basis: null,
     },
     {
@@ -185,7 +186,7 @@ const JURISDICTIONS = {
         description: 'A civil penalty of up to $250 plus up to $250 in damages to the employee per offense (fewer than 25 employees), or $500 plus $500 (25 or more); each day without a required meal is a separate offense.',
         citations: [{ citation: '820 ILCS 140/7', sourceUrl: 'https://ftp.ilga.gov/ilcs/Ch%200820/Act%200140/082001400K7.html' }],
       },
-      unchecked: [],
+      unchecked: [IL_HOTEL_ATTENDANTS],
       basis: null,
     },
   ],
@@ -212,7 +213,7 @@ const JURISDICTIONS = {
       minutes: 10, perHours: 4, majorFraction: false, minimumShiftHours: null, table: null, maxStretch: null, paid: true, waiver: null, appliesWhen: null,
       citations: [{ citation: 'KRS 337.365', sourceUrl: 'https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=49845' }],
       confidence: 'high',
-      note: 'A paid 10-minute rest during each 4 hours worked, in addition to lunch. No major-fraction rule. A collective bargaining agreement giving at least as much rest time may replace it (since 2020-03-27).',
+      note: 'A paid 10-minute rest during each 4 hours worked, in addition to lunch. No major-fraction rule. Not for employees under the federal Railway Labor Act. A collective bargaining agreement giving at least as much rest time may replace it (since 2020-03-27).',
     },
     penalty: {
       premiumHours: null, breakTimePaid: null,
@@ -471,7 +472,7 @@ const JURISDICTIONS = {
         { citation: 'RCW 49.52.070', sourceUrl: 'https://app.leg.wa.gov/rcw/default.aspx?cite=49.52.070' },
       ],
     },
-    unchecked: [],
+    unchecked: ['An employee working 3 or more hours longer than their normal workday (the shift they are regularly scheduled to work) must be allowed a 30-minute meal before or during the overtime (WAC 296-126-092(3)). The tables do not know the normal workday, so this is not checked; the every-5-hours meal covers most such days.'],
     basis: null,
   },
 
@@ -507,9 +508,10 @@ const JURISDICTIONS = {
         waiver: {},
         onDutyAllowed: false,
         appliesWhen: null,
+        exemptIfPaidBreaks: { minutes: 30, perWorkedHours: 7.5 },
         citations: [{ citation: 'Conn. Gen. Stat. § 31-51ii', sourceUrl: 'https://www.cga.ct.gov/current/pub/chap_557.htm#sec_31-51ii' }],
         confidence: 'high',
-        note: '7½ or more consecutive hours needs at least 30 consecutive minutes for a meal, after the first 2 hours and before the last 2. A written agreement may set a different schedule (record it as a waiver of "meal"). Does not apply to an employer that gives 30 or more minutes of paid rest or meal time in each 7½-hour period, or under a Labor Commissioner exemption.',
+        note: '7½ or more consecutive hours needs at least 30 consecutive minutes for a meal, after the first 2 hours and before the last 2. A written agreement may set a different schedule (record it as a waiver of "meal"). Subsection (f): does not apply to an employer that gives 30 or more total minutes of paid rest or meal periods within each 7½-hour work period; the checker applies this when the day\'s rest breaks and on-duty meals reach 30 minutes in each full 7½ hours worked. Labor Commissioner exemptions are not encoded.',
       },
     ],
     rest: null,
