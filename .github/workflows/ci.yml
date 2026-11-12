@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 't3/**']
   pull_request:
   # Monthly, so stale tables fail even when nothing is pushed.
   schedule:
